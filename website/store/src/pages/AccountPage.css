@@ -1676,3 +1676,16 @@
 .product-name:hover {
   color: #D70010;
 }
+
+
+/* chỉnh sửa css by Vien*/
+.account-form input,
+.account-form select,
+.account-form textarea {
+  color: #111 !important;
+  background-color: #fff !important;
+}
+
+.account-form input::placeholder {
+  color: #888 !important;
+}
