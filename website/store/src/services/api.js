@@ -142,74 +142,127 @@ export const cartService = {
   },
 };
 
-// Import mock user services
-import mockUserService from './userService';
-
-// User services - Using mock data
+// 🧩 USER SERVICE - REAL BACKEND (MySQL)
 export const userService = {
+  // Lấy thông tin người dùng (tạm dùng localStorage)
   getProfile: async () => {
-    try {
-      return await mockUserService.profile.getProfile();
-    } catch (error) {
-      throw new Error(error.message || 'Lỗi khi tải thông tin người dùng');
-    }
+    const user = JSON.parse(localStorage.getItem('anta_user'));
+    return {
+      fullName: user?.username || '',
+      email: user?.email || '',
+      phone: '',
+      birthday: '',
+      gender: '',
+    };
   },
 
-  updateProfile: async (userData) => {
-    try {
-      return await mockUserService.profile.updateProfile(userData);
-    } catch (error) {
-      throw new Error(error.message || 'Lỗi khi cập nhật thông tin');
-    }
+  updateProfile: async (data) => {
+    // Nếu bạn có API cập nhật user thật, có thể thêm sau
+    return data;
   },
 
-  changePassword: async (passwordData) => {
-    try {
-      return await mockUserService.profile.changePassword(passwordData);
-    } catch (error) {
-      throw new Error(error.message || 'Lỗi khi đổi mật khẩu');
-    }
+  changePassword: async (data) => {
+    // Nếu backend có API đổi mật khẩu, thêm ở đây
+    return { message: 'Đổi mật khẩu thành công (mock)' };
   },
 
+  // ==============================
+  // 🏠 ADDRESS API (REAL BACKEND)
+  // ==============================
+
+  // ✅ Bản mới — BE trả về List<AddressResponse>
   getAddresses: async () => {
     try {
-      return await mockUserService.addresses.getAddresses();
+      const user = JSON.parse(localStorage.getItem('anta_user'));
+      const res = await api.get(`/api/address/allUserAddress/${user.id}`);
+      const data = res.data;
+
+      // Nếu BE trả về đúng list
+      if (Array.isArray(data)) {
+        return data;
+      }
+
+      // Nếu lỡ có kiểu object thì fallback (đảm bảo an toàn)
+      if (typeof data === 'object') {
+        const list = Object.values(data).find(v => Array.isArray(v));
+        return list || [];
+      }
+
+      return [];
     } catch (error) {
-      throw new Error(error.message || 'Lỗi khi tải danh sách địa chỉ');
+      console.error('❌ Error getAddresses:', error);
+      throw new Error(error.response?.data || error.message);
     }
   },
 
+  // Thêm địa chỉ mới
   addAddress: async (addressData) => {
     try {
-      return await mockUserService.addresses.addAddress(addressData);
+      const user = JSON.parse(localStorage.getItem('anta_user'));
+      const payload = {
+        detailedAddress: addressData.detailedAddress || addressData.address,
+        country: addressData.country || 'Vietnam',
+        phoneNumber: addressData.phoneNumber || addressData.phone,
+        recipientName: addressData.recipientName,
+        postalCode: addressData.postalCode || '',
+        isDefault: addressData.isDefault || false,
+      };
+      const res = await api.post(`/api/address/add/${user.id}`, payload);
+      return Object.keys(res.data)[0]; // BE trả về Map<AddressResponse, String>
     } catch (error) {
-      throw new Error(error.message || 'Lỗi khi thêm địa chỉ');
+      console.error('❌ Error addAddress:', error);
+      throw new Error(error.response?.data || error.message);
     }
   },
 
+  // Cập nhật địa chỉ
   updateAddress: async (id, addressData) => {
     try {
-      return await mockUserService.addresses.updateAddress(id, addressData);
+      const user = JSON.parse(localStorage.getItem('anta_user'));
+      const payload = {
+        detailedAddress: addressData.detailedAddress || addressData.address,
+        country: addressData.country || 'Vietnam',
+        phoneNumber: addressData.phoneNumber || addressData.phone,
+        recipientName: addressData.recipientName,
+        postalCode: addressData.postalCode || '',
+        isDefault: addressData.isDefault || false,
+      };
+      const res = await api.put(
+        `/api/address/update/addressId/${id}/userId/${user.id}`,
+        payload
+      );
+      return Object.keys(res.data)[0];
     } catch (error) {
-      throw new Error(error.message || 'Lỗi khi cập nhật địa chỉ');
+      console.error('❌ Error updateAddress:', error);
+      throw new Error(error.response?.data || error.message);
     }
   },
 
+  // Xóa địa chỉ
   deleteAddress: async (id) => {
     try {
-      return await mockUserService.addresses.deleteAddress(id);
+      const user = JSON.parse(localStorage.getItem('anta_user'));
+      const res = await api.delete(
+        `/api/address/delete/addressId/${id}/userId/${user.id}`
+      );
+      return res.data;
     } catch (error) {
-      throw new Error(error.message || 'Lỗi khi xóa địa chỉ');
+      console.error('❌ Error deleteAddress:', error);
+      throw new Error(error.response?.data || error.message);
     }
   },
 
-  setDefaultAddress: async (id) => {
-    try {
-      return await mockUserService.addresses.setDefaultAddress(id);
-    } catch (error) {
-      throw new Error(error.message || 'Lỗi khi đặt địa chỉ mặc định');
-    }
-  },
+  // ✅ Gọi API thật để đặt địa chỉ mặc định
+setDefaultAddress: async (id) => {
+  try {
+    const user = JSON.parse(localStorage.getItem('anta_user'));
+    const res = await api.put(`/api/address/setDefault/${id}/user/${user.id}`);
+    return res.data;
+  } catch (error) {
+    console.error('❌ Error setDefaultAddress:', error);
+    throw new Error(error.response?.data || error.message);
+  }
+},
 };
 
 // Order services - Using mock data

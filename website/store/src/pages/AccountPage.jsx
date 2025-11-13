@@ -9,18 +9,18 @@ export default function AccountPage() {
   const { section } = useParams();
   const { user, isAuthenticated, isLoading, logout } = useAuth();
   const { addToCart } = useCart();
-  
+
   const { orders, getOrder, getOrdersByStatus, totalOrders, cancelOrder } = useOrders();
   const { wishlist, removeFromWishlist: removeFromWishlistContext, totalWishlistItems } = useWishlist();
-  const { 
-    profile, 
-    addresses, 
-    updateProfile, 
+  const {
+    profile,
+    addresses,
+    updateProfile,
     changePassword,
     addAddress,
     updateAddress,
     deleteAddress,
-    setDefaultAddress 
+    setDefaultAddress
   } = useUserData();
 
   const [activeTab, setActiveTab] = useState(section || 'overview');
@@ -28,7 +28,7 @@ export default function AccountPage() {
   const [showAddressModal, setShowAddressModal] = useState(false);
   const [editingAddress, setEditingAddress] = useState(null);
   const [orderFilter, setOrderFilter] = useState('all');
-  
+
   const [showOrderDetailModal, setShowOrderDetailModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
@@ -37,7 +37,7 @@ export default function AccountPage() {
   const [trackingOrder, setTrackingOrder] = useState(null);
 
   const [profileData, setProfileData] = useState({
-    fullName: '',
+    recipientName: '',
     email: '',
     phone: '',
     birthday: '',
@@ -46,8 +46,9 @@ export default function AccountPage() {
 
   const [addressForm, setAddressForm] = useState({
     recipientName: '',
-    phone: '',
-    address: '',
+    phoneNumber: '',
+    detailedAddress: '',
+    country: 'Vietnam',
     isDefault: false
   });
 
@@ -103,7 +104,7 @@ export default function AccountPage() {
 
   const handleChangePassword = async (e) => {
     e.preventDefault();
-    
+
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
       alert('Mật khẩu mới không khớp!');
       return;
@@ -183,7 +184,7 @@ export default function AccountPage() {
         await addAddress(addressForm);
       }
       closeAddressModal();
-      alert(editingAddress ? 'Cập nh���t địa chỉ thành công!' : 'Thêm địa chỉ thành công!');
+      alert(editingAddress ? 'Cập nhật địa chỉ thành công!' : 'Thêm địa chỉ thành công!');
     } catch (error) {
       alert('Có lỗi xảy ra: ' + error.message);
     } finally {
@@ -439,7 +440,7 @@ export default function AccountPage() {
 
   const renderOrders = () => {
     const filteredOrders = getFilteredOrders();
-    
+
     return (
       <div className="orders-section">
         <h2>Đơn hàng của tôi</h2>
@@ -552,7 +553,7 @@ export default function AccountPage() {
             type="text"
             id="fullName"
             name="fullName"
-            value={profileData.fullName}
+            value={profileData.fullName || user?.username || ''}
             onChange={handleProfileChange}
             placeholder="Nhập họ và tên"
             required
@@ -566,7 +567,7 @@ export default function AccountPage() {
               type="email"
               id="email"
               name="email"
-              value={profileData.email}
+              value={profileData.email || user?.email || ''}
               onChange={handleProfileChange}
               placeholder="example@email.com"
               required
@@ -577,8 +578,8 @@ export default function AccountPage() {
             <input
               type="tel"
               id="phone"
-              name="phone"
-              value={profileData.phone}
+              name="phoneNumber"   // ✅ đổi lại name cho đúng key
+              value={profileData.phoneNumber || user?.phoneNumber || ''}
               onChange={handleProfileChange}
               placeholder="0123456789"
             />
@@ -625,38 +626,38 @@ export default function AccountPage() {
         <form className="password-change-form" onSubmit={handleChangePassword}>
           <div className="field-group">
             <label htmlFor="currentPassword">Mật khẩu hiện tại *</label>
-            <input 
-              type="password" 
+            <input
+              type="password"
               id="currentPassword"
               name="currentPassword"
               value={passwordForm.currentPassword}
               onChange={handlePasswordChange}
-              placeholder="Nhập mật khẩu hiện tại" 
-              required 
+              placeholder="Nhập mật khẩu hiện tại"
+              required
             />
           </div>
           <div className="field-group">
             <label htmlFor="newPassword">Mật khẩu mới *</label>
-            <input 
-              type="password" 
+            <input
+              type="password"
               id="newPassword"
               name="newPassword"
               value={passwordForm.newPassword}
               onChange={handlePasswordChange}
-              placeholder="Nhập mật khẩu mới" 
-              required 
+              placeholder="Nhập mật khẩu mới"
+              required
             />
           </div>
           <div className="field-group">
             <label htmlFor="confirmPassword">Xác nhận mật khẩu *</label>
-            <input 
-              type="password" 
+            <input
+              type="password"
               id="confirmPassword"
               name="confirmPassword"
               value={passwordForm.confirmPassword}
               onChange={handlePasswordChange}
-              placeholder="Nhập lại mật khẩu mới" 
-              required 
+              placeholder="Nhập lại mật khẩu mới"
+              required
             />
           </div>
           <button type="submit" className="save-btn" disabled={loading}>
@@ -667,44 +668,64 @@ export default function AccountPage() {
     </div>
   );
 
-  const renderAddresses = () => (
-    <div className="addresses-section">
-      <div className="section-title">
-        <h2>Sổ địa chỉ</h2>
-        <button className="add-new-btn" onClick={() => openAddressModal()}>+ Thêm địa chỉ mới</button>
-      </div>
+ const renderAddresses = () => (
+  <div className="addresses-section">
+    <div className="section-title">
+      <h2>Sổ địa chỉ</h2>
+      <button className="add-new-btn" onClick={() => openAddressModal()}>
+        + Thêm địa chỉ mới
+      </button>
+    </div>
 
-      {addresses.length > 0 ? (
-        <div className="address-list">
-          {addresses.map((address) => (
-            <div key={address.id} className={`address-item ${address.isDefault ? 'is-default' : ''}`}>
-              <div className="address-header-row">
-                <div className="address-recipient">
-                  <h4>{address.recipientName}</h4>
-                  {address.isDefault && <span className="default-tag">Mặc định</span>}
-                </div>
-              </div>
-              <div className="address-content">
-                <p className="recipient-phone">{address.phone}</p>
-                <p className="recipient-address">{address.address}</p>
-              </div>
-              <div className="address-action-buttons">
-                <button className="edit-btn" onClick={() => openAddressModal(address)}>Chỉnh sửa</button>
-                <button className="delete-btn" onClick={() => handleDeleteAddress(address.id)}>Xóa</button>
-                {!address.isDefault && (
-                  <button className="set-default-btn" onClick={() => handleSetDefaultAddress(address.id)}>Đặt làm mặc định</button>
-                )}
+    {addresses.length > 0 ? (
+      <div className="address-list">
+        {addresses.map((address) => (
+          <div
+            key={address.id}
+            className={`address-item ${address.isDefault ? "is-default" : ""}`}
+          >
+            <div className="address-header-row">
+              <div className="address-recipient">
+                <h4>{address.recipientName}</h4>
+                {address.isDefault && <span className="default-tag">Mặc định</span>}
               </div>
             </div>
-          ))}
-        </div>
-      ) : (
-        <div className="empty-state">
-          <p>Bạn chưa có địa chỉ nào</p>
-        </div>
-      )}
-    </div>
-  );
+
+            <div className="address-content">
+              <p className="recipient-phone">{address.phoneNumber}</p>
+              <p className="recipient-address">
+                {address.detailedAddress || address.address}
+                {address.country ? `, ${address.country}` : ""}
+              </p>
+            </div>
+
+            <div className="address-action-buttons">
+              <button className="edit-btn" onClick={() => openAddressModal(address)}>
+                Chỉnh sửa
+              </button>
+              <button className="delete-btn" onClick={() => handleDeleteAddress(address.id)}>
+                Xóa
+              </button>
+              {!address.isDefault && (
+                <button
+                  className="set-default-btn"
+                  onClick={() => handleSetDefaultAddress(address.id)}
+                >
+                  Đặt làm mặc định
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    ) : (
+      <div className="empty-state">
+        <p>Bạn chưa có địa chỉ nào</p>
+      </div>
+    )}
+  </div>
+);
+
 
   return (
     <Layout>
@@ -823,30 +844,46 @@ export default function AccountPage() {
                   required
                 />
               </div>
+
               <div className="field-group">
-                <label htmlFor="addressPhone">Số điện thoại *</label>
+                <label htmlFor="phoneNumber">Số điện thoại *</label>
                 <input
                   type="tel"
-                  id="addressPhone"
-                  name="phone"
-                  value={addressForm.phone}
+                  id="phoneNumber"
+                  name="phoneNumber"
+                  value={addressForm.phoneNumber}
                   onChange={handleAddressFormChange}
                   placeholder="0123456789"
                   required
                 />
               </div>
+
               <div className="field-group">
-                <label htmlFor="addressDetail">Địa chỉ chi tiết *</label>
+                <label htmlFor="country">Khu vực *</label>
+                <input
+                  type="text"
+                  id="country"
+                  name="country"
+                  value={addressForm.country}
+                  onChange={handleAddressFormChange}
+                  placeholder="Vietnam"
+                  required
+                />
+              </div>
+
+              <div className="field-group">
+                <label htmlFor="detailedAddress">Địa chỉ chi tiết *</label>
                 <textarea
-                  id="addressDetail"
-                  name="address"
-                  value={addressForm.address}
+                  id="detailedAddress"
+                  name="detailedAddress"
+                  value={addressForm.detailedAddress}
                   onChange={handleAddressFormChange}
                   placeholder="Số nhà, tên đường, phường/xã, quận/huyện, tỉnh/thành phố"
                   rows="3"
                   required
                 />
               </div>
+
               <div className="field-group checkbox-group">
                 <label>
                   <input
@@ -858,6 +895,7 @@ export default function AccountPage() {
                   <span>Đặt làm địa chỉ mặc định</span>
                 </label>
               </div>
+
               <div className="modal-footer">
                 <button type="button" className="cancel-btn" onClick={closeAddressModal}>Hủy</button>
                 <button type="submit" className="save-btn" disabled={loading}>
@@ -865,6 +903,7 @@ export default function AccountPage() {
                 </button>
               </div>
             </form>
+
           </div>
         </div>
       )}
@@ -885,7 +924,7 @@ export default function AccountPage() {
                   Ngày đặt: {new Date(selectedOrder.date || selectedOrder.createdAt).toLocaleDateString('vi-VN')}
                 </span>
               </div>
-              
+
               <div className="order-detail-section">
                 <h4>Sản phẩm</h4>
                 <div className="order-products-list">
@@ -970,7 +1009,7 @@ export default function AccountPage() {
                     <div className="step-marker">
                       {step.completed ? (
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                          <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
                       ) : (
                         <div className="step-circle"></div>

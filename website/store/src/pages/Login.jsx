@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts';
 import { Header as Headers, Footer, FloatingButtons } from '../components';
 import './AuthPage.css';
-
+import axios from "axios";
 export default function Login() {
   const navigate = useNavigate();
   const { login, isAdmin } = useAuth();
@@ -32,15 +32,15 @@ export default function Login() {
 
   const validateForm = () => {
     const newErrors = {};
-    
+
     if (!formData.email) {
       newErrors.email = 'Vui lòng nhập email hoặc tên đăng nhập';
     }
-    
+
     if (!formData.password) {
       newErrors.password = 'Vui lòng nhập mật khẩu';
     }
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -55,65 +55,66 @@ export default function Login() {
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60)
     };
-    
+
     const base64Header = btoa(JSON.stringify(header));
     const base64Payload = btoa(JSON.stringify(payload));
-    
+
     return `${base64Header}.${base64Payload}.mock_signature`;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!validateForm()) return;
-    
+
     setIsLoading(true);
     setErrors({});
-    
+
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      let userData;
-      let token;
-      
-      if ((formData.email === 'admin' || formData.email === 'admin@anta.com') && formData.password === 'abc123!@#') {
-        userData = {
-          username: 'admin',
-          email: 'admin@anta.com',
-          role: 'ADMIN'
-        };
-        token = generateToken(userData);
-        
-        login(token);
-        setSuccessMessage('Đăng nhập Admin thành công!');
-        
-        setTimeout(() => {
-          navigate('/admin', { replace: true });
-        }, 500);
-      } else if (formData.email && formData.password.length >= 6) {
-        const username = formData.email.split('@')[0] || 'User';
-        userData = {
-          username: username.charAt(0).toUpperCase() + username.slice(1),
-          email: formData.email,
-          role: 'USER'
-        };
-        token = generateToken(userData);
-        
-        login(token);
-        setSuccessMessage('Đăng nhập thành công!');
-        
-        setTimeout(() => {
-          navigate('/home', { replace: true });
-        }, 500);
+      const res = await axios.post("http://localhost:8082/api/auth/login", {
+        name: formData.email, // BE cần 'name' thay vì 'email'
+        password: formData.password
+      });
+
+      if (res.data && res.data.accessToken) {
+        const { accessToken, refreshToken, role } = res.data;
+
+        // ✅ Lưu token vào context và localStorage
+        login(accessToken, refreshToken);
+
+        // ✅ Giải mã token để lấy role nếu backend chưa trả về
+        let userRole = role;
+        try {
+          const payload = JSON.parse(atob(accessToken.split(".")[1]));
+          if (!userRole && payload.role) userRole = payload.role;
+        } catch (e) {
+          console.warn("Không decode được token:", e);
+        }
+
+        setSuccessMessage("🎉 Đăng nhập thành công!");
+
+        const upperRole = String(userRole || "").toUpperCase();
+        if (upperRole.includes("ADMIN")) {
+          setTimeout(() => {
+            const upperRole = String(userRole || "").toUpperCase();
+            const dest = upperRole.includes("ADMIN") ? "/admin" : "/home";
+            navigate(dest, { replace: true });
+          }, 300);
+        } else {
+          setTimeout(() => navigate("/home", { replace: true }), 500);
+        }
       } else {
-        throw new Error('Invalid credentials');
+        setErrors({ general: "Đăng nhập thất bại. Vui lòng thử lại." });
       }
     } catch (error) {
-      setErrors({ general: 'Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin đăng nhập.' });
+      console.error("Login error:", error);
+      setErrors({ general: "Lỗi đăng nhập. Vui lòng kiểm tra lại thông tin." });
     } finally {
       setIsLoading(false);
     }
   };
+
+
 
   const handleSocialLogin = (provider) => {
     console.log(`Login with ${provider}`);
@@ -124,7 +125,7 @@ export default function Login() {
   return (
     <div className="auth-page">
       <Headers />
-      
+
       <div className="breadcrumbs">
         <div className="container">
           <Link to="/" className="breadcrumb-link">Trang chủ</Link>
@@ -147,7 +148,7 @@ export default function Login() {
                 <h1 className="auth-title">Đăng nhập tài khoản</h1>
                 <p className="auth-subtitle">Chào mừng bạn quay trở lại!</p>
               </div>
-              
+
               <div className="auth-switch">
                 <span>Bạn chưa có tài khoản? </span>
                 <Link to="/register" className="auth-link">Đăng ký ngay</Link>
@@ -211,17 +212,7 @@ export default function Login() {
                       onClick={() => setShowPassword(!showPassword)}
                       aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
                     >
-                      {showPassword ? (
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                          <line x1="1" y1="1" x2="23" y2="23"></line>
-                        </svg>
-                      ) : (
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                          <circle cx="12" cy="12" r="3"></circle>
-                        </svg>
-                      )}
+                      {showPassword ? "🙈" : "👁️"}
                     </button>
                   </div>
                   {errors.password && (
@@ -268,8 +259,9 @@ export default function Login() {
                   </div>
                 )}
 
-                <button 
-                  type="submit" 
+
+                <button
+                  type="submit"
                   className="auth-submit-btn"
                   disabled={isLoading}
                 >
@@ -295,29 +287,29 @@ export default function Login() {
                 <div className="social-divider">
                   <span>Hoặc đăng nhập bằng</span>
                 </div>
-                
+
                 <div className="social-buttons">
-                  <button 
+                  <button
                     className="social-btn google-btn"
                     onClick={() => handleSocialLogin('Google')}
                     type="button"
                   >
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
                     </svg>
                     <span>Google</span>
                   </button>
-                  
-                  <button 
+
+                  <button
                     className="social-btn facebook-btn"
                     onClick={() => handleSocialLogin('Facebook')}
                     type="button"
                   >
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
                     </svg>
                     <span>Facebook</span>
                   </button>
