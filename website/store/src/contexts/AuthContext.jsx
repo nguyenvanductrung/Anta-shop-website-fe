@@ -9,9 +9,7 @@ import { STORAGE_KEYS } from "../constants";
 import { authService } from "../services/api";
 import api from "../services/api";
 
-// -------------------------
-// 🔍 Hàm decode JWT
-// -------------------------
+// Hàm decode JWT
 function decodeJwt(token) {
   try {
     if (!token) return null;
@@ -30,9 +28,6 @@ function decodeJwt(token) {
   }
 }
 
-// -------------------------
-// 🧩 Context
-// -------------------------
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
@@ -50,9 +45,6 @@ export const AuthProvider = ({ children }) => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // -------------------------
-  // ⚙️ Gắn token vào axios
-  // -------------------------
   useEffect(() => {
     if (accessToken) {
       api.defaults.headers.common["Authorization"] = `Bearer ${accessToken}`;
@@ -61,9 +53,6 @@ export const AuthProvider = ({ children }) => {
     }
   }, [accessToken]);
 
-  // -------------------------
-  // 💾 Lưu token vào localStorage
-  // -------------------------
   const luuToken = (access, refresh) => {
     if (access) {
       localStorage.setItem(STORAGE_KEYS.TOKEN, access);
@@ -76,9 +65,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // -------------------------
-  // ❌ Xóa toàn bộ khi logout
-  // -------------------------
   const xoaTatCa = () => {
     localStorage.removeItem(STORAGE_KEYS.TOKEN);
     localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
@@ -90,9 +76,6 @@ export const AuthProvider = ({ children }) => {
     delete api.defaults.headers.common["Authorization"];
   };
 
-  // -------------------------
-  // 🔐 LOGIN
-  // -------------------------
   const login = (access, refresh) => {
     if (!access) {
       xoaTatCa();
@@ -103,7 +86,6 @@ export const AuthProvider = ({ children }) => {
 
     const decoded = decodeJwt(access);
     if (decoded) {
-      // ⚠️ Giả định token có chứa id hoặc userId
       const userId =
         decoded.id ||
         decoded.userId ||
@@ -117,7 +99,7 @@ export const AuthProvider = ({ children }) => {
         username: decoded.sub || decoded.username || decoded.name || "",
         role,
         email: decoded.email || "",
-        phoneNumber: decoded.phoneNumber || decoded.phone || "", // 👈 thêm dòng này
+        phoneNumber: decoded.phoneNumber || decoded.phone || "",
       };
 
       try {
@@ -134,17 +116,11 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // -------------------------
-  // 🚪 LOGOUT
-  // -------------------------
   const logout = () => {
     xoaTatCa();
     window.dispatchEvent(new CustomEvent("auth:logout"));
   };
 
-  // -------------------------
-  // 🔁 Làm mới token
-  // -------------------------
   const thuLamMoiToken = useCallback(async () => {
     const storedRefresh =
       refreshToken || localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
@@ -157,6 +133,7 @@ export const AuthProvider = ({ children }) => {
         res?.data?.accessToken ||
         res?.token ||
         res?.access_token;
+
       if (newAccess) {
         luuToken(newAccess, storedRefresh);
         return true;
@@ -168,9 +145,6 @@ export const AuthProvider = ({ children }) => {
     }
   }, [refreshToken]);
 
-  // -------------------------
-  // 🧱 Interceptor tự refresh token
-  // -------------------------
   useEffect(() => {
     const interceptor = api.interceptors.response.use(
       (r) => r,
@@ -192,10 +166,6 @@ export const AuthProvider = ({ children }) => {
     return () => api.interceptors.response.eject(interceptor);
   }, [thuLamMoiToken]);
 
-  // -------------------------
-  // ♻️ F5 giữ đăng nhập
-  // -------------------------
-  // ♻️ F5 giữ đăng nhập
   useEffect(() => {
     const loadUser = async () => {
       setIsLoading(true);
@@ -215,7 +185,7 @@ export const AuthProvider = ({ children }) => {
             username: decoded.sub || decoded.username || decoded.name || "",
             role,
             email: decoded.email || "",
-            phoneNumber: decoded.phoneNumber || decoded.phone || "", // ✅ Thêm dòng này
+            phoneNumber: decoded.phoneNumber || decoded.phone || "",
           };
 
           setUser(u);
@@ -230,10 +200,6 @@ export const AuthProvider = ({ children }) => {
     loadUser();
   }, [accessToken, thuLamMoiToken]);
 
-
-  // -------------------------
-  // 📦 Provider
-  // -------------------------
   return (
     <AuthContext.Provider
       value={{
@@ -249,11 +215,10 @@ export const AuthProvider = ({ children }) => {
       {children}
     </AuthContext.Provider>
   );
-};
+}; 
 
-// -------------------------
-// 📦 Hook tiện dụng
-// -------------------------
+
+// Hook tiện dụng
 export const useAuth = () => {
   const c = useContext(AuthContext);
   if (!c) throw new Error("useAuth phải được dùng trong <AuthProvider>");
