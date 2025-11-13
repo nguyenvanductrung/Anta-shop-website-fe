@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import "./header.css";
 import { useNavigate, Link } from "react-router-dom";
 import { useCart, useAuth } from "../contexts";
-import SearchBar from "./SearchBar";
+import SearchDrawer from "./overlays/SearchDrawer";
 import { ROUTES, MENU_ITEMS } from "../constants";
 
 const Header = () => {
@@ -11,6 +11,7 @@ const Header = () => {
   const { user, isAuthenticated, logout } = useAuth();
   const [activeDropdown, setActiveDropdown] = useState(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   const menuData = MENU_ITEMS;
 
@@ -42,6 +43,10 @@ const Header = () => {
     navigate(ROUTES.CART);
   };
 
+  const handleSearchToggle = () => {
+    setIsSearchOpen(!isSearchOpen);
+  };
+
   return (
     <>
       <header className="anta-header">
@@ -68,10 +73,6 @@ const Header = () => {
                 className="h-12 w-auto object-contain cursor-pointer"
               />
             </Link>
-          </div>
-
-          <div className="header-search-container">
-            <SearchBar />
           </div>
 
           <nav className="header-navigation">
@@ -144,6 +145,29 @@ const Header = () => {
 
           <div className="header-right">
             <button
+              className="header-action search-action"
+              onClick={handleSearchToggle}
+              aria-label="Tìm kiếm"
+            >
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                <path
+                  d="M9 17C13.4183 17 17 13.4183 17 9C17 4.58172 13.4183 1 9 1C4.58172 1 1 4.58172 1 9C1 13.4183 4.58172 17 9 17Z"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M18.9999 19L14.6499 14.65"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+
+            <button
               className="header-action user-action"
               onClick={() => {
                 if (!isAuthenticated) {
@@ -207,10 +231,6 @@ const Header = () => {
             </button>
           </div>
         </div>
-
-        <div className="mobile-search-container">
-          <SearchBar />
-        </div>
       </header>
 
       {isMobileMenuOpen && (
@@ -272,6 +292,8 @@ const Header = () => {
           </div>
         </div>
       )}
+
+      <SearchDrawer open={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
     </>
   );
 };
