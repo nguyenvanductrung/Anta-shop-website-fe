@@ -585,34 +585,6 @@ export default function AccountPage() {
             />
           </div>
         </div>
-
-        <div className="field-row">
-          <div className="field-group">
-            <label htmlFor="birthday">Ngày sinh</label>
-            <input
-              type="date"
-              id="birthday"
-              name="birthday"
-              value={profileData.birthday}
-              onChange={handleProfileChange}
-            />
-          </div>
-          <div className="field-group">
-            <label htmlFor="gender">Giới tính</label>
-            <select
-              id="gender"
-              name="gender"
-              value={profileData.gender}
-              onChange={handleProfileChange}
-            >
-              <option value="">Chọn giới tính</option>
-              <option value="male">Nam</option>
-              <option value="female">Nữ</option>
-              <option value="other">Khác</option>
-            </select>
-          </div>
-        </div>
-
         <div className="button-group">
           <button type="submit" className="save-btn" disabled={loading}>
             {loading ? 'Đang cập nhật...' : 'Cập nhật thông tin'}

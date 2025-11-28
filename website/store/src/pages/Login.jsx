@@ -1,7 +1,10 @@
+//src/pages/Login.jsx
+
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts';
 import { Header as Headers, Footer, FloatingButtons } from '../components';
+import { authService } from '../services/api';
 import './AuthPage.css';
 import axios from "axios";
 export default function Login() {
@@ -71,49 +74,58 @@ export default function Login() {
     setErrors({});
 
     try {
-      const res = await axios.post("http://localhost:8082/api/auth/login", {
-        name: formData.email, // BE cần 'name' thay vì 'email'
-        password: formData.password
-      });
+      // authService.login trả về trực tiếp res.data
+      const data = await authService.login({ email: formData.email, password: formData.password });
 
-      if (res.data && res.data.accessToken) {
-        const { accessToken, refreshToken, role } = res.data;
+      // một số backend trả thành { accessToken: ..., refreshToken: ... }
+      // một số trả access_token / refresh_token — hỗ trợ cả 2 dạng
+      const payload = data && (data.accessToken || data.access_token) ? data
+        : data && data.data ? data.data // phòng trường hợp api.login trả res object
+          : null;
 
-        // ✅ Lưu token vào context và localStorage
-        login(accessToken, refreshToken);
+      if (!payload || !(payload.accessToken || payload.access_token)) {
+        throw new Error('Phản hồi không hợp lệ từ server');
+      }
 
-        // ✅ Giải mã token để lấy role nếu backend chưa trả về
-        let userRole = role;
-        try {
-          const payload = JSON.parse(atob(accessToken.split(".")[1]));
-          if (!userRole && payload.role) userRole = payload.role;
-        } catch (e) {
-          console.warn("Không decode được token:", e);
+      const accessToken = payload.accessToken || payload.access_token;
+      const refreshToken = payload.refreshToken || payload.refresh_token;
+      const role = payload.role;
+
+      // lưu token qua context (login) và localStorage (login implementation của bạn xử lý)
+      login(accessToken, refreshToken);
+
+      // cố gắng decode token để lấy role nếu backend chưa trả role trực tiếp
+      let userRole = role;
+      try {
+        const parts = accessToken.split('.');
+        if (parts.length > 1) {
+          const decoded = JSON.parse(atob(parts[1]));
+          if (!userRole && decoded && decoded.role) userRole = decoded.role;
         }
+      } catch (err) {
+        console.warn('Không decode được token:', err);
+      }
 
-        setSuccessMessage("🎉 Đăng nhập thành công!");
+      setSuccessMessage('🎉 Đăng nhập thành công!');
 
-        const upperRole = String(userRole || "").toUpperCase();
-        if (upperRole.includes("ADMIN")) {
-          setTimeout(() => {
-            const upperRole = String(userRole || "").toUpperCase();
-            const dest = upperRole.includes("ADMIN") ? "/admin" : "/home";
-            navigate(dest, { replace: true });
-          }, 300);
-        } else {
-          setTimeout(() => navigate("/home", { replace: true }), 500);
-        }
+      const upperRole = String(userRole || '').toUpperCase();
+      if (upperRole.includes('ADMIN')) {
+        // chuyển hướng admin
+        setTimeout(() => navigate('/admin', { replace: true }), 250);
       } else {
-        setErrors({ general: "Đăng nhập thất bại. Vui lòng thử lại." });
+        // user thường
+        setTimeout(() => navigate('/home', { replace: true }), 250);
       }
     } catch (error) {
-      console.error("Login error:", error);
-      setErrors({ general: "Lỗi đăng nhập. Vui lòng kiểm tra lại thông tin." });
+      console.error('Login error:', error);
+
+      // ưu tiên lấy message từ response nếu có
+      const serverMsg = error?.response?.data?.message || error?.response?.data?.error || error?.message;
+      setErrors({ general: serverMsg || 'Lỗi đăng nhập. Vui lòng kiểm tra lại thông tin.' });
     } finally {
       setIsLoading(false);
     }
   };
-
 
 
   const handleSocialLogin = (provider) => {

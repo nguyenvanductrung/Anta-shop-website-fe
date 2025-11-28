@@ -1689,3 +1689,16 @@
 .account-form input::placeholder {
   color: #888 !important;
 }
+
+/* FIX màu chữ trong modal input */
+.modal-body input,
+.modal-body textarea,
+.modal-body select {
+  color: #111 !important;          /* chữ đậm */
+  background-color: #fff !important; /* nền trắng */
+}
+
+.modal-body input::placeholder,
+.modal-body textarea::placeholder {
+  color: #888 !important;          /* placeholder xám */
+}

@@ -1,7 +1,6 @@
-// src/components/ProductManagement.jsx
 import React, { useState, useEffect } from 'react';
-import AddProduct from './AddProduct';
-import adminService from '../services/adminService';
+import AdminAddProduct from './AdminAddProduct';
+import { products as adminProductService } from '../services';
 import './ProductManagement.css';
 
 export default function ProductManagement({ activeSubTab, setActiveSubTab, onDataChange }) {
@@ -21,18 +20,25 @@ export default function ProductManagement({ activeSubTab, setActiveSubTab, onDat
 
   useEffect(() => {
     loadProducts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadProducts = async () => {
     setLoading(true);
-    const result = await adminService.products.getProducts();
-    if (result.success) {
-      setProducts(result.data);
-      setFilteredProducts(result.data);
-    } else {
-      alert('Không thể tải danh sách sản phẩm');
+    try {
+      const result = await adminProductService.getProducts();
+      if (result?.success) {
+        setProducts(result.data || []);
+        setFilteredProducts(result.data || []);
+      } else {
+        alert('Không thể tải danh sách sản phẩm');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Lỗi khi tải sản phẩm');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleFilterChange = (field, value) => {
@@ -44,11 +50,17 @@ export default function ProductManagement({ activeSubTab, setActiveSubTab, onDat
 
   const handleSearch = async () => {
     setLoading(true);
-    const result = await adminService.products.getProducts(filters);
-    if (result.success) {
-      setFilteredProducts(result.data);
+    try {
+      const result = await adminProductService.getProducts(filters);
+      if (result?.success) {
+        setFilteredProducts(result.data || []);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Lỗi khi tìm kiếm');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleReset = () => {
@@ -65,7 +77,7 @@ export default function ProductManagement({ activeSubTab, setActiveSubTab, onDat
 
   const renderStars = (rating) => {
     const r = Number.isFinite(rating) ? rating : 0;
-    return '★'.repeat(r) + '☆'.repeat(5 - r);
+    return '★'.repeat(r) + '☆'.repeat(Math.max(0, 5 - r));
   };
 
   const formatPrice = (price) => {
@@ -75,39 +87,21 @@ export default function ProductManagement({ activeSubTab, setActiveSubTab, onDat
 
   const placeholderImage = 'https://images.pexels.com/photos/1598505/pexels-photo-1598505.jpeg?auto=compress&cs=tinysrgb&w=400';
 
-  const handleDeleteProduct = async (productId) => {
-    if (window.confirm('Bạn có chắc muốn xóa sản phẩm này?')) {
-      const result = await adminService.products.deleteProduct(productId);
-      if (result.success) {
-        alert(result.message);
-        await loadProducts();
-        if (onDataChange) onDataChange();
-      } else {
-        alert(result.error || 'Không thể xóa sản phẩm');
-      }
-    }
-  };
-
-  const handleEditProduct = async (productId) => {
-    const result = await adminService.products.getProduct(productId);
-    if (result.success) {
-      setEditingProduct(result.data);
-      setActiveSubTab('add-product');
-    } else {
-      alert('Không thể tải thông tin sản phẩm');
-    }
-  };
-
-  const handleProductSaved = async () => {
-    setEditingProduct(null);
-    await loadProducts();
-    if (onDataChange) onDataChange();
-  };
-
-  // --- NEW: helper to extract image and variant info ---
   const getProductImage = (product) => {
     if (!product) return placeholderImage;
     return product.thumbnail || product.image || (product.images && product.images[0]) || placeholderImage;
+  };
+
+  // prefer totalStock, then quantity, then stock, or compute from variants
+  const getProductStock = (product) => {
+    if (!product) return 0;
+    if (product.totalStock !== undefined && product.totalStock !== null) return product.totalStock;
+    if (product.quantity !== undefined && product.quantity !== null) return product.quantity;
+    if (product.stock !== undefined && product.stock !== null) return product.stock;
+    if (Array.isArray(product.variants) && product.variants.length) {
+      return product.variants.reduce((s, v) => s + (Number(v.stock ?? v.quantity ?? 0) || 0), 0);
+    }
+    return 0;
   };
 
   const getVariantsCount = (product) => {
@@ -124,18 +118,63 @@ export default function ProductManagement({ activeSubTab, setActiveSubTab, onDat
         if (v.sku) parts.push(`SKU:${v.sku}`);
         if (v.size !== undefined && v.size !== null && v.size !== '') parts.push(`Size:${v.size}`);
         if (v.color) parts.push(`${v.color}`);
-        if (v.quantity !== undefined && v.quantity !== null) parts.push(`Qty:${v.quantity}`);
+        const stockVal = (v.stock !== undefined && v.stock !== null) ? v.stock : v.quantity ?? '—';
+        parts.push(`Stock:${stockVal}`);
         return parts.join(' • ');
       })
       .join('\n');
   };
 
+  const handleDeleteProduct = async (productId) => {
+    if (window.confirm('Bạn có chắc muốn xóa sản phẩm này?')) {
+      try {
+        const result = await adminProductService.deleteProduct(productId);
+        if (result?.success) {
+          alert(result.message || 'Đã xóa');
+          await loadProducts();
+          if (onDataChange) onDataChange();
+        } else {
+          alert(result.error || 'Không thể xóa sản phẩm');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Lỗi khi xóa sản phẩm');
+      }
+    }
+  };
+
+  const handleEditProduct = async (productId) => {
+    try {
+      const result = await adminProductService.getProduct(productId);
+      if (result?.success) {
+        setEditingProduct(result.data);
+        setActiveSubTab('add-product');
+      } else {
+        alert('Không thể tải thông tin sản phẩm');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Lỗi khi tải sản phẩm');
+    }
+  };
+
+  const handleProductSaved = async (savedProduct) => {
+    // savedProduct may be returned from service
+    setEditingProduct(null);
+    setActiveSubTab('my-products');
+    await loadProducts();
+    if (onDataChange) onDataChange();
+  };
+
   if (activeSubTab === 'add-product') {
     return (
-      <AddProduct 
-        setActiveSubTab={setActiveSubTab} 
+      <AdminAddProduct 
         editingProduct={editingProduct}
-        onProductSaved={handleProductSaved}
+        onSaved={handleProductSaved}
+        onCancel={() => {
+          setEditingProduct(null);
+          setActiveSubTab('my-products');
+        }}
       />
     );
   }
@@ -327,7 +366,7 @@ export default function ProductManagement({ activeSubTab, setActiveSubTab, onDat
                   <th className="col-price">Giá</th>
                   <th className="col-quantity">Số lượng</th>
                   <th className="col-sales">Đã bán</th>
-                  <th className="col-variants">Variants</th> {/* NEW */}
+                  <th className="col-variants">Variants</th>
                   <th className="col-rating">Đánh giá</th>
                   <th className="col-status">Trạng thái</th>
                   <th className="col-actions">Thao tác</th>
@@ -346,7 +385,7 @@ export default function ProductManagement({ activeSubTab, setActiveSubTab, onDat
                     <td className="price-cell">{formatPrice(product.price)} VNĐ</td>
                     <td className="quantity-cell">
                       <span className={product.status === 'low-stock' ? 'low-stock-badge' : ''}>
-                        {product.quantity ?? 0}
+                        {getProductStock(product)}
                       </span>
                     </td>
                     <td className="sales-cell">{product.sales ?? 0}</td>

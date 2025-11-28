@@ -1,3 +1,4 @@
+//src/contexts/AuthContext.jsx
 import React, {
   createContext,
   useContext,

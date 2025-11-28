@@ -1,4 +1,5 @@
 // Application constants
+//src/constants/index.js
 export const ROUTES = {
   HOME: '/home',
   LOGIN: '/login',
@@ -16,7 +17,7 @@ export const API_ENDPOINTS = {
   AUTH: {
     LOGIN: '/api/auth/login',
     REGISTER: '/api/auth/register',
-    REFRESH: '/api/auth/refresh'
+    REFRESH: '/api/auth/refresh-token'
   },
   PRODUCTS: {
     LIST: '/api/products',

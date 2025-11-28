@@ -3,6 +3,7 @@ import axios from "axios";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts";
 import "./AuthForm.css";
+import { authService } from "../services/api";
 
 export default function AuthForm({ type }) {
   const [formData, setFormData] = useState({
@@ -23,51 +24,39 @@ export default function AuthForm({ type }) {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:8082";
-
     try {
-      let url, payload;
-
       if (type === "register") {
-        url = `${baseUrl}/api/auth/register`;
         const fullName = `${formData.firstName || ""} ${formData.lastName || ""}`.trim();
-        payload = {
+        const payload = {
           name: fullName,
           email: formData.email?.trim(),
           password: formData.password,
           phoneNumber: formData.phoneNumber?.trim(),
         };
-
-        const res = await axios.post(url, payload, {
-          headers: { "Content-Type": "application/json; charset=utf-8" },
-        });
-        alert(res.data?.message || "Đăng ký thành công!");
+        const res = await authService.register(payload);
+        // authService.register trả res.data (theo api bạn định nghĩa)
+        alert(res?.message || "Đăng ký thành công!");
         navigate("/login");
-      } else {
-        url = `${baseUrl}/api/auth/login`;
-        payload = {
-          name: formData.name?.trim(),
-          password: formData.password,
-        };
-
-        const res = await axios.post(url, payload, {
-          headers: { "Content-Type": "application/json; charset=utf-8" },
-        });
-
-        const accessToken = res.data?.accessToken;
-        const refreshToken = res.data?.refreshToken;
-
-        if (!accessToken) {
-          alert("Đăng nhập thất bại: server không trả token.");
-          return;
-        }
-
-        login(accessToken, refreshToken);
-        alert("Đăng nhập thành công!");
-        navigate("/home");
+        return;
       }
-    } catch (err) {
+
+      // LOGIN
+      const res = await authService.login({
+        name: formData.name?.trim(),
+        password: formData.password,
+      });
+
+      const accessToken = res?.accessToken || res?.data?.accessToken;
+      const refreshToken = res?.refreshToken || res?.data?.refreshToken; 
+      if (!accessToken) {
+        alert("Đăng nhập thất bại: server không trả token.");
+        return;
+      }
+
+      login(accessToken, refreshToken);
+      alert("Đăng nhập thành công!");
+      navigate("/home");
+     } catch (err) {
       if (err.response) {
         alert("Lỗi: " + (err.response.data?.message || JSON.stringify(err.response.data)));
       } else {
