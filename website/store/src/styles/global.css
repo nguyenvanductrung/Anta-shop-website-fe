@@ -21,7 +21,8 @@
   --color-info: #3B82F6;
   
   /* Typography */
-  --font-family-base: 'Roboto', 'Poppins', 'Helvetica Neue', Arial, sans-serif;
+  --font-family-base: 'Inter', system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;

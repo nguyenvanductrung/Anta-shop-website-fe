@@ -335,49 +335,49 @@
 }
 
 .order-status-badge {
-  padding: 8px 20px;
-  border-radius: 14px;
-  font-size: 12px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  padding: 4px 12px;
+  border-radius: 999px; /* pill nhỏ */
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0.2px;
+  box-shadow: none;
 }
 
 .order-status-badge.unpaid {
-  background: linear-gradient(135deg, rgba(251, 191, 36, 0.2) 0%, rgba(251, 191, 36, 0.1) 100%);
-  color: #d97706;
-  border: 2px solid rgba(251, 191, 36, 0.3);
+  background: #FEF3C7;
+  color: #B45309;
+  border: 1px solid #FBBF24;
 }
 
 .order-status-badge.needs-shipping {
-  background: linear-gradient(135deg, rgba(215, 0, 16, 0.2) 0%, rgba(215, 0, 16, 0.1) 100%);
-  color: var(--color-primary);
-  border: 2px solid rgba(215, 0, 16, 0.3);
+  background: #FEE2E2;
+  color: #B91C1C;
+  border: 1px solid #F97373;
 }
 
 .order-status-badge.sent {
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(59, 130, 246, 0.1) 100%);
-  color: #2563eb;
-  border: 2px solid rgba(59, 130, 246, 0.3);
+  background: #DBEAFE;
+  color: #1D4ED8;
+  border: 1px solid #60A5FA;
 }
 
 .order-status-badge.completed {
-  background: linear-gradient(135deg, rgba(30, 167, 90, 0.2) 0%, rgba(30, 167, 90, 0.1) 100%);
-  color: #059669;
-  border: 2px solid rgba(30, 167, 90, 0.3);
+  background: #DCFCE7;
+  color: #047857;
+  border: 1px solid #34D399;
 }
 
 .order-status-badge.cancelled {
-  background: linear-gradient(135deg, rgba(107, 107, 107, 0.2) 0%, rgba(107, 107, 107, 0.1) 100%);
-  color: #4b5563;
-  border: 2px solid rgba(107, 107, 107, 0.3);
+  background: #F3F4F6;
+  color: #4B5563;
+  border: 1px solid #D1D5DB;
 }
 
 .order-status-badge.return {
-  background: linear-gradient(135deg, rgba(215, 0, 16, 0.2) 0%, rgba(215, 0, 16, 0.1) 100%);
-  color: var(--color-primary);
-  border: 2px solid rgba(215, 0, 16, 0.3);
+  background: #FEF2F2;
+  color: #B91C1C;
+  border: 1px solid #F87171;
 }
 
 /* Order Products List */
