@@ -17,12 +17,10 @@
   margin-left: 280px;
   transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   min-height: 100vh;
-  padding-top: 1px; /* Prevent margin collapse */
-  margin-top: -1px; /* Counteract the padding */
 }
 
 .admin-content-wrapper {
-  padding: 28px; /* trên/dưới & hai bên ~24–32px */
+  padding: 0 28px 28px; /* bỏ padding trên, giữ hai bên & dưới ~24–32px */
   max-width: 1800px;
   margin: 0 auto;
 }

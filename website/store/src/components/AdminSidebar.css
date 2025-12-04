@@ -11,9 +11,9 @@
 .admin-sidebar {
   position: fixed;
   left: 0;
-  top: 116px;
+  top: 0;
   width: 280px;
-  height: calc(100vh - 116px);
+  height: 100vh;
   background-color: var(--color-bg-sidebar);
   color: var(--color-text);
   display: flex;
