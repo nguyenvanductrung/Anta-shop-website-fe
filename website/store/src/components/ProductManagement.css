@@ -219,8 +219,8 @@
 .products-table-card {
   background: #ffffff;
   border-radius: 20px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06), 0 1px 4px rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.06);
+  border: 1px solid #E5E7EB;
   overflow: hidden;
 }
 
@@ -230,18 +230,18 @@
 }
 
 .data-table thead {
-  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-  border-bottom: 3px solid #e6e6e6;
+  background: #F9FAFB; /* header nền xám rất nhạt */
+  border-bottom: 1px solid #E5E7EB;
 }
 
 .data-table th {
-  padding: 20px 20px;
+  padding: 14px 20px;
   text-align: left;
   font-size: 12px;
-  font-weight: 800;
-  color: #1a1a1a;
+  font-weight: 600;
+  color: #4B5563; /* xám đậm */
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 0.8px;
 }
 
 .data-table td {
@@ -256,9 +256,18 @@
   cursor: pointer;
 }
 
+/* Zebra rows */
+.data-table tbody tr:nth-child(odd) {
+  background: #FFFFFF;
+}
+
+.data-table tbody tr:nth-child(even) {
+  background: #F9FAFB;
+}
+
 .data-table tbody tr:hover {
-  background: linear-gradient(90deg, rgba(215, 0, 16, 0.03) 0%, transparent 100%);
-  transform: translateX(6px);
+  background: #EFF6FF; /* xanh rất nhạt */
+  transform: translateX(0);
 }
 
 .data-table tbody tr:last-child td {
