@@ -1,267 +1,119 @@
-import React, { createContext, useContext, useReducer, useEffect } from 'react';
-import { STORAGE_KEYS } from '../constants';
-import { useDataSync } from './DataSyncContext';
+import React, { createContext, useContext, useMemo } from 'react';
+import { useCart as useCartHook } from '../hooks/useCart';
 
 const CartContext = createContext();
 
-const cartReducer = (state, action) => {
-  switch (action.type) {
-    case 'ADD_TO_CART': {
-      const existingItem = state.items.find(item => {
-        if (action.payload.size || action.payload.color) {
-          return (
-            item.id === action.payload.id &&
-            item.size === action.payload.size &&
-            item.color === action.payload.color
-          );
-        }
-        return item.id === action.payload.id;
-      });
-
-      if (existingItem) {
-        return {
-          ...state,
-          items: state.items.map(item => {
-            if (action.payload.size || action.payload.color) {
-              return (
-                item.id === action.payload.id &&
-                item.size === action.payload.size &&
-                item.color === action.payload.color
-              ) ? { ...item, quantity: item.quantity + (action.payload.quantity || 1) }
-                : item;
-            }
-            return item.id === action.payload.id
-              ? { ...item, quantity: item.quantity + (action.payload.quantity || 1) }
-              : item;
-          })
-        };
-      }
-
-      return {
-        ...state,
-        items: [...state.items, { ...action.payload, quantity: action.payload.quantity || 1 }]
-      };
-    }
-
-    case 'REMOVE_FROM_CART':
-      return {
-        ...state,
-        items: state.items.filter(item => {
-          if (action.payload.size || action.payload.color) {
-            return !(
-              item.id === action.payload.id &&
-              item.size === action.payload.size &&
-              item.color === action.payload.color
-            );
-          }
-          return item.id !== action.payload.id;
-        })
-      };
-
-    case 'UPDATE_QUANTITY': {
-      const newQuantity = Math.max(0, Math.min(99, action.payload.quantity));
-      
-      return {
-        ...state,
-        items: state.items.map(item => {
-          if (action.payload.size || action.payload.color) {
-            return (
-              item.id === action.payload.id &&
-              item.size === action.payload.size &&
-              item.color === action.payload.color
-            ) ? { ...item, quantity: newQuantity }
-              : item;
-          }
-          return item.id === action.payload.id
-            ? { ...item, quantity: newQuantity }
-            : item;
-        }).filter(item => item.quantity > 0)
-      };
-    }
-
-    case 'CLEAR_CART':
-      return {
-        ...state,
-        items: []
-      };
-
-    case 'LOAD_CART':
-      return {
-        ...state,
-        items: action.payload || []
-      };
-
-    case 'SET_COUPON':
-      return {
-        ...state,
-        coupon: action.payload
-      };
-
-    case 'REMOVE_COUPON':
-      return {
-        ...state,
-        coupon: null
-      };
-
-    default:
-      return state;
-  }
-};
-
 export const CartProvider = ({ children }) => {
-  const dataSync = useDataSync ? (() => {
-    try {
-      return useDataSync();
-    } catch {
-      return null;
+  const { cart, loading, addItem, removeItem, clearCart, updateQuantity, refreshCart } = useCartHook();
+
+  // DEBUG: Log cart từ BE
+  console.log('🛒 [CartContext] BE Cart:', cart);
+  console.log('🛒 [CartContext] BE Items:', cart?.items);
+
+  // Map data từ BE sang CartPage format
+  const items = useMemo(() => {
+    if (!cart?.items) {
+      console.log('🔄 [CartContext] No items in cart');
+      return [];
     }
-  })() : null;
 
-  const [state, dispatch] = useReducer(cartReducer, {
-    items: [],
-    coupon: null
-  });
+    console.log('🔄 [CartContext] Mapping BE items...');
 
-  useEffect(() => {
-    try {
-      const savedCart = localStorage.getItem(STORAGE_KEYS.CART);
-      if (savedCart) {
-        const parsedCart = JSON.parse(savedCart);
-        dispatch({ type: 'LOAD_CART', payload: parsedCart });
-      }
-    } catch (error) {
-      console.error('Failed to load cart from localStorage:', error);
-      localStorage.removeItem(STORAGE_KEYS.CART);
-    }
-  }, []);
+    return cart.items.map(cartItem => {
+      // QUAN TRỌNG: CartPage dùng item.id để xóa/update
+      // Nhưng item.id này phải là cartItem.id (từ DB)
+      const mappedItem = {
+        id: cartItem.id,           // CartItem ID từ DB
+        cartItemId: cartItem.id,   // Giữ thêm reference
+        productId: cartItem.productId,
+        variantId: cartItem.variantId,
+        name: cartItem.productName,
+        price: cartItem.unitPrice,
+        quantity: cartItem.quantity,
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.CART, JSON.stringify(state.items));
-      if (dataSync) {
-        dataSync.emitCartUpdate({ action: 'update', items: state.items });
-      }
-    } catch (error) {
-      console.error('Failed to save cart to localStorage:', error);
-    }
-  }, [state.items, dataSync]);
+        // CartPage cần các field này (thêm mặc định)
+        image: 'https://via.placeholder.com/100x100?text=Product',
+        size: null,
+        color: null,
+        sku: `SKU-${cartItem.productId}`,
+        originalPrice: null
+      };
 
-  useEffect(() => {
-    const handleStorageChange = (e) => {
-      if (e.key === STORAGE_KEYS.CART && e.newValue !== e.oldValue) {
-        try {
-          const newCart = e.newValue ? JSON.parse(e.newValue) : [];
-          dispatch({ type: 'LOAD_CART', payload: newCart });
-        } catch (error) {
-          console.error('Error syncing cart from storage:', error);
-        }
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
-
-  const addToCart = (product) => {
-    if (!product || !product.id) {
-      console.error('Invalid product data');
-      return;
-    }
-    
-    const productWithDefaults = {
-      ...product,
-      price: product.price || 0,
-      quantity: product.quantity || 1,
-      name: product.name || 'Unnamed Product',
-      image: product.image || null
-    };
-    
-    dispatch({ type: 'ADD_TO_CART', payload: productWithDefaults });
-  };
-
-  const removeFromCart = (productId, options = {}) => {
-    dispatch({ 
-      type: 'REMOVE_FROM_CART', 
-      payload: { id: productId, ...options } 
+      console.log('📝 [CartContext] Mapped item:', mappedItem);
+      return mappedItem;
     });
-  };
+  }, [cart]);
 
-  const updateQuantity = (productId, quantity, options = {}) => {
-    const sanitizedQuantity = parseInt(quantity) || 0;
-    
-    dispatch({ 
-      type: 'UPDATE_QUANTITY', 
-      payload: { 
-        id: productId, 
-        quantity: sanitizedQuantity,
-        ...options 
-      } 
-    });
-  };
+  const totalItems = useMemo(() => {
+    const total = items.reduce((sum, item) => sum + (item.quantity || 0), 0);
+    console.log('🧮 [CartContext] Total items:', total);
+    return total;
+  }, [items]);
 
-  const clearCart = () => {
-    dispatch({ type: 'CLEAR_CART' });
-  };
-
-  const setCoupon = (coupon) => {
-    dispatch({ type: 'SET_COUPON', payload: coupon });
-  };
-
-  const removeCoupon = () => {
-    dispatch({ type: 'REMOVE_COUPON' });
-  };
-
-  const getItemById = (productId, options = {}) => {
-    return state.items.find(item => {
-      if (options.size || options.color) {
-        return (
-          item.id === productId &&
-          item.size === options.size &&
-          item.color === options.color
-        );
-      }
-      return item.id === productId;
-    });
-  };
-
-  const isInCart = (productId, options = {}) => {
-    return !!getItemById(productId, options);
-  };
-
-  const totalItems = state.items.reduce((sum, item) => sum + item.quantity, 0);
-  
-  const totalPrice = state.items.reduce((sum, item) => {
-    const itemPrice = item.price || 0;
-    const itemQuantity = item.quantity || 0;
-    return sum + (itemPrice * itemQuantity);
-  }, 0);
-
-  const subtotal = totalPrice;
-
-  const getCartSummary = () => {
-    return {
-      itemCount: totalItems,
-      subtotal: subtotal,
-      total: totalPrice
-    };
-  };
+  const totalPrice = useMemo(() => {
+    const total = items.reduce((sum, item) => sum + ((item.price || 0) * (item.quantity || 0)), 0);
+    console.log('💰 [CartContext] Total price:', total);
+    return total;
+  }, [items]);
 
   const value = {
-    items: state.items,
-    coupon: state.coupon,
+    items,
+    cartId: cart?.id,
+    loading,
     totalItems,
     totalPrice,
-    subtotal,
-    addToCart,
-    removeFromCart,
-    updateQuantity,
-    clearCart,
-    setCoupon,
-    removeCoupon,
-    getItemById,
-    isInCart,
-    getCartSummary
+    subtotal: totalPrice,
+
+    addToCart: async (product, quantity = 1, options = {}) => {
+      console.log('➕ [CartContext] addToCart called:', { product, quantity, options });
+      return await addItem(product);
+    },
+
+    // QUAN TRỌNG: CartPage gọi removeFromCart(item.id)
+    // item.id này là cartItem.id (đã map ở trên)
+    removeFromCart: async (cartItemId, options = {}) => {
+      console.log('🗑️ [CartContext] removeFromCart called:', { cartItemId, options });
+      await removeItem(cartItemId);
+    },
+
+    // QUAN TRỌNG: CartPage gọi updateQuantity(item.id, newQuantity)
+    updateQuantity: async (cartItemId, quantity, options = {}) => {
+      console.log('🔢 [CartContext] updateQuantity called:', { cartItemId, quantity, options });
+
+      // Tìm item để lấy productId và variantId
+      const item = items.find(i => i.id === cartItemId);
+      if (!item) {
+        console.error('❌ [CartContext] Item not found for cartItemId:', cartItemId);
+        return;
+      }
+
+      console.log('🔍 [CartContext] Found item for update:', item);
+
+      if (cart?.id) {
+        await updateQuantity(
+          item.productId,
+          item.variantId,
+          Number(quantity)
+        );
+      }
+    },
+
+    clearCart: async () => {
+      console.log('🧹 [CartContext] clearCart called');
+      if (cart?.id) {
+        await clearCart();
+      }
+    },
+
+    refreshCart,
   };
+
+  console.log('🎯 [CartContext] Returning value:', {
+    itemsCount: value.items.length,
+    totalItems: value.totalItems,
+    totalPrice: value.totalPrice,
+    cartId: value.cartId
+  });
 
   return (
     <CartContext.Provider value={value}>
@@ -273,7 +125,7 @@ export const CartProvider = ({ children }) => {
 export const useCart = () => {
   const context = useContext(CartContext);
   if (!context) {
-    throw new Error('useCart must be used within a CartProvider');
+    throw new Error('useCart must be used within CartProvider');
   }
   return context;
 };
