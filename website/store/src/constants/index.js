@@ -24,9 +24,13 @@ export const API_ENDPOINTS = {
     SEARCH: '/api/products/search'
   },
   CART: {
-    ADD: '/api/cart/add',
-    REMOVE: '/api/cart/remove',
-    UPDATE: '/api/cart/update'
+    BASE: '/api/cart',
+    ADD: '/api/cart/add',        // Gọi gateway → chuyển đến cart-service:8088
+    CURRENT: '/api/cart/current',
+    REMOVE_ITEM: '/api/cart/item/:itemId',
+    CLEAR: '/api/cart/:cartId/clear',
+    UPDATE_QUANTITY: '/api/cart/:cartId/items/quantity',
+    MERGE: '/api/cart/merge'
   },
   USER: {
     PROFILE: '/api/user/profile',
