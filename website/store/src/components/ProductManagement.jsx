@@ -261,12 +261,12 @@ export default function ProductManagement({ activeSubTab, setActiveSubTab, onDat
                     {/* parent */}
                     <tr className="table-row parent-row" role="row">
                       <td className="product-cell col-product">
-                        <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                        <div className="product-main">
                           <button className={`expand-btn ${isExpanded ? 'open' : ''}`} onClick={() => toggleExpand(pid)} aria-label={isExpanded ? 'Thu gọn variants' : 'Mở variants'}>{isExpanded ? '▾' : '▸'}</button>
                           <img src={getProductImage(product)} alt={product.name} className="product-thumbnail" />
-                          <div>
-                            <div style={{ fontWeight:800 }}>{product.name}</div>
-                            <div style={{ fontSize:12, color:'#6B6B6B' }}>{product.brand}</div>
+                          <div className="product-text">
+                            <div className="product-name">{product.name}</div>
+                            <div className="product-brand">{product.brand}</div>
                           </div>
                         </div>
                       </td>
