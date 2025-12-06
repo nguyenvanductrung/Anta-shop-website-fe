@@ -64,46 +64,116 @@ export const UserDataProvider = ({ children }) => {
   const loadProfile = async () => {
     try {
       const data = await userService.getProfile();
-      setProfile({
+
+      const p = {
         fullName: data.fullName || user?.username || '',
         email: data.email || user?.email || '',
         phone: data.phone || '',
         birthday: data.birthday || '',
         gender: data.gender || ''
-      });
+      };
+
+      setProfile(p);
+
+      // ✅ đồng bộ ra LocalStorage để CheckoutPage có thể auto-fill
+      try {
+        localStorage.setItem(
+          'anta_user_profile',
+          JSON.stringify({
+            fullName: p.fullName,
+            email: p.email,
+            phoneNumber: p.phone
+          })
+        );
+      } catch { }
     } catch (err) {
       console.error('Error loading profile:', err);
-      setProfile({
+
+      const p = {
         fullName: user?.username || '',
         email: user?.email || '',
         phone: '',
         birthday: '',
         gender: ''
-      });
+      };
+
+      setProfile(p);
+
+      // ✅ vẫn ghi ra LocalStorage để các trang khác đọc được
+      try {
+        localStorage.setItem(
+          'anta_user_profile',
+          JSON.stringify({
+            fullName: p.fullName,
+            email: p.email,
+            phoneNumber: p.phone
+          })
+        );
+      } catch { }
     }
   };
-
   const loadAddresses = async () => {
     try {
       const data = await userService.getAddresses();
       setAddresses(data);
+
+      // ✅ đồng bộ ra LocalStorage để CheckoutPage đọc
+      try {
+        localStorage.setItem('anta_user_addresses', JSON.stringify(data));
+      } catch { }
     } catch (err) {
       console.error('Error loading addresses:', err);
       setAddresses([]);
+
+      // ✅ vẫn đảm bảo có key trong LS
+      try {
+        localStorage.setItem('anta_user_addresses', '[]');
+      } catch { }
     }
   };
 
   const updateProfile = async (profileData) => {
+    setLoading(true);
+    setError(null);
+
     try {
-      await userService.updateProfile(profileData);
-      setProfile(prev => ({ ...prev, ...profileData }));
+      // ⛳️ Tùy API của bạn:
+      // Nếu backend trả về profile mới:
+      const updated = await userService.updateProfile(profileData);
+
+      const p = {
+        fullName: updated?.fullName ?? profileData.fullName ?? profile.fullName ?? user?.username ?? '',
+        email: updated?.email ?? profileData.email ?? profile.email ?? user?.email ?? '',
+        phone: updated?.phone ?? profileData.phone ?? profile.phone ?? '',
+        birthday: updated?.birthday ?? profileData.birthday ?? profile.birthday ?? '',
+        gender: updated?.gender ?? profileData.gender ?? profile.gender ?? ''
+      };
+
+      setProfile(p);
+
+      // ✅ đồng bộ ra LocalStorage để các trang khác auto-fill
+      try {
+        localStorage.setItem(
+          'anta_user_profile',
+          JSON.stringify({
+            fullName: p.fullName,
+            email: p.email,
+            phoneNumber: p.phone
+          })
+        );
+      } catch { }
+
       if (dataSync) {
-        dataSync.emitUserDataUpdate({ action: 'updateProfile', data: profileData });
+        dataSync.emitUserDataUpdate({ action: 'updateProfile', profile: p });
       }
-      return true;
+
+      return p;
     } catch (err) {
       console.error('Error updating profile:', err);
+      setError(err.message);
       throw err;
+    } finally {
+      setLoading(false);
     }
   };
 

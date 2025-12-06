@@ -209,7 +209,7 @@ export const adminProductService = {
       price: productData.price ?? 0,
       categories: productData.category ? [productData.category] : (productData.categories || []),
       category: productData.category || undefined,
-      images: productData.images || (productData.image ? [productData.image] : []),
+    //  images: productData.images || (productData.image ? [productData.image] : []),
       variants: Array.isArray(productData.variants) ? productData.variants.map(v => ({
         sku: v.sku,
         price: v.price ?? 0,
@@ -269,7 +269,7 @@ export const adminProductService = {
       description: productData.description || '',
       price: productData.price ?? 0,
       categories: productData.category ? [productData.category] : (productData.categories || []),
-      images: productData.images || (productData.image ? [productData.image] : []),
+     // images: productData.images || (productData.image ? [productData.image] : []),
       variants: productData.variants || [],
       totalStock: productData.totalStock ?? productData.quantity ?? undefined
     };

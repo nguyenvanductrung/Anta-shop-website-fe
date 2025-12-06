@@ -1613,3 +1613,37 @@
     flex-direction: column;
   }
 }
+/* ✅ Card địa chỉ đang dùng (Step 1) */
+.selected-address-card{
+  display:flex; justify-content:space-between; align-items:flex-start;
+  gap:16px; padding:14px 16px; border:1px solid var(--border, #eee);
+  border-radius:12px; background:#fff; margin-bottom:16px;
+}
+.sel-title{ font-weight:700; margin-bottom:6px; }
+.sel-name{ font-weight:600; }
+.sel-phone{ color:#666; margin:2px 0; }
+.sel-addr{ color:#333; }
+.badge-default{
+  display:inline-block; margin-top:6px; padding:2px 8px; border:1px solid #D70010;
+  color:#D70010; border-radius:999px; font-size:12px; font-weight:600;
+}
+.sel-right{ display:flex; flex-direction:column; gap:6px; }
+
+/* ✅ Address Picker Modal */
+.address-picker-modal{ max-width:720px; width:100%; }
+.address-picker-list{ max-height:420px; overflow:auto; margin:8px 0 12px; display:flex; flex-direction:column; gap:10px; }
+.address-pick-item{
+  display:flex; align-items:flex-start; justify-content:space-between; gap:12px;
+  padding:12px; border:1px solid #eee; border-radius:10px; cursor:pointer; background:#fff;
+}
+.address-pick-item:hover{ border-color:#ddd; background:#fafafa; }
+.address-pick-item.is-selected{ border-color:#D70010; box-shadow:0 0 0 3px rgba(215,0,16,.08); }
+.pick-name{ font-weight:600; }
+.pick-phone{ color:#666; margin:2px 0; }
+.pick-addr{ color:#333; }
+.pick-default{
+  border:1px solid #D70010; color:#D70010; border-radius:999px; font-size:12px; padding:2px 8px; height:fit-content;
+}
+
+/* Dùng lại lớp sẵn có của QR modal: .qr-modal-overlay, .qr-modal, .qr-header, .qr-actions, .btn-primary, .btn-secondary, .btn-link */
+
