@@ -1,8 +1,11 @@
+//src/pages/AdminPage.jsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts';
 import { AdminSidebar, ProductManagement, ShippingManagement } from '../components';
 import adminService from '../services/adminService';
+import ProductOverviewChart from '../pages/ProductOverviewChart';
+
 import './AdminPage.css';
 
 export default function AdminPage() {
@@ -11,7 +14,7 @@ export default function AdminPage() {
   const { logout, user, isAuthenticated, isAdmin, isLoading } = useAuth();
   const navigate = useNavigate();
   const [currentTime, setCurrentTime] = useState(new Date());
-  
+
   const [dashboardStats, setDashboardStats] = useState(null);
   const [messages, setMessages] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -78,7 +81,7 @@ export default function AdminPage() {
       alert('Vui lòng nhập nội dung phản hồi');
       return;
     }
-    
+
     const result = await adminService.messages.replyToMessage(messageId, replyText);
     if (result.success) {
       setMessages(messages.map(m => m.id === messageId ? result.data : m));
@@ -143,7 +146,26 @@ export default function AdminPage() {
   };
 
   const renderContent = () => {
+
     switch (activeTab) {
+      case 'product-stats':
+        return (
+          <div className="admin-content-section">
+            <div className="section-header">
+              <h1 className="section-title-main">Thống kê sản phẩm</h1>
+              <div style={{ marginLeft: 'auto' }}>
+                {/* nếu muốn truyền topN từ admin */}
+                {/* <button onClick={() => setActiveTab('dashboard')}>Quay lại</button> */}
+              </div>
+            </div>
+
+            {/* Option A: ProductOverviewChart (horizontal grouped bars + highlight) */}
+            <ProductOverviewChart topN={10} useMock={false} />
+
+            {/* Option B: nếu bạn muốn dùng ProductStatsPage thay thế, comment ProductOverviewChart và dùng: */}
+            {/* <ProductStatsPage topN={10} /> */}
+          </div>
+        );
       case 'dashboard':
         return (
           <div className="admin-dashboard">
@@ -435,18 +457,18 @@ export default function AdminPage() {
                       <div className="metric-header">
                         <span className="metric-label">Đơn hàng hoàn thành</span>
                         <span className="metric-percentage">
-                          {dashboardStats?.totalOrders > 0 
-                            ? Math.round((dashboardStats.completedOrders / dashboardStats.totalOrders) * 100) 
+                          {dashboardStats?.totalOrders > 0
+                            ? Math.round((dashboardStats.completedOrders / dashboardStats.totalOrders) * 100)
                             : 0}%
                         </span>
                       </div>
                       <div className="progress-bar">
-                        <div 
-                          className="progress-fill" 
-                          style={{ 
-                            width: `${dashboardStats?.totalOrders > 0 
-                              ? (dashboardStats.completedOrders / dashboardStats.totalOrders) * 100 
-                              : 0}%` 
+                        <div
+                          className="progress-fill"
+                          style={{
+                            width: `${dashboardStats?.totalOrders > 0
+                              ? (dashboardStats.completedOrders / dashboardStats.totalOrders) * 100
+                              : 0}%`
                           }}
                         ></div>
                       </div>
@@ -459,12 +481,12 @@ export default function AdminPage() {
                         </span>
                       </div>
                       <div className="progress-bar">
-                        <div 
-                          className="progress-fill" 
-                          style={{ 
-                            width: `${dashboardStats?.totalProducts > 0 
-                              ? ((dashboardStats.totalProducts - dashboardStats.lowStockProducts) / dashboardStats.totalProducts) * 100 
-                              : 100}%` 
+                        <div
+                          className="progress-fill"
+                          style={{
+                            width: `${dashboardStats?.totalProducts > 0
+                              ? ((dashboardStats.totalProducts - dashboardStats.lowStockProducts) / dashboardStats.totalProducts) * 100
+                              : 100}%`
                           }}
                         ></div>
                       </div>
@@ -473,18 +495,18 @@ export default function AdminPage() {
                       <div className="metric-header">
                         <span className="metric-label">Tin nhắn đã xử lý</span>
                         <span className="metric-percentage">
-                          {messages.length > 0 
-                            ? Math.round((messages.filter(m => m.read).length / messages.length) * 100) 
+                          {messages.length > 0
+                            ? Math.round((messages.filter(m => m.read).length / messages.length) * 100)
                             : 0}%
                         </span>
                       </div>
                       <div className="progress-bar">
-                        <div 
-                          className="progress-fill" 
-                          style={{ 
-                            width: `${messages.length > 0 
-                              ? (messages.filter(m => m.read).length / messages.length) * 100 
-                              : 0}%` 
+                        <div
+                          className="progress-fill"
+                          style={{
+                            width: `${messages.length > 0
+                              ? (messages.filter(m => m.read).length / messages.length) * 100
+                              : 0}%`
                           }}
                         ></div>
                       </div>
@@ -498,7 +520,7 @@ export default function AdminPage() {
 
       case 'products':
         return (
-          <ProductManagement 
+          <ProductManagement
             activeSubTab={activeSubTab}
             setActiveSubTab={setActiveSubTab}
             onDataChange={loadDashboardData}
@@ -538,7 +560,7 @@ export default function AdminPage() {
                         </div>
                       </div>
                       {!message.read && (
-                        <button 
+                        <button
                           className="mark-read-btn"
                           onClick={() => handleMarkMessageAsRead(message.id)}
                         >
@@ -601,7 +623,7 @@ export default function AdminPage() {
             <div className="section-header">
               <h1 className="section-title-main">Thông Báo</h1>
               {notifications.filter(n => !n.read).length > 0 && (
-                <button 
+                <button
                   className="mark-all-read-btn"
                   onClick={handleMarkAllNotificationsAsRead}
                 >
@@ -618,8 +640,8 @@ export default function AdminPage() {
             ) : (
               <div className="notifications-list">
                 {notifications.map((notification) => (
-                  <div 
-                    key={notification.id} 
+                  <div
+                    key={notification.id}
                     className="notification-item"
                     onClick={() => !notification.read && handleMarkNotificationAsRead(notification.id)}
                   >
@@ -650,37 +672,37 @@ export default function AdminPage() {
                 <div className="settings-form">
                   <div className="form-group">
                     <label>Tên Cửa Hàng</label>
-                    <input 
-                      type="text" 
-                      defaultValue={settings?.storeName || 'ANTA Store'} 
+                    <input
+                      type="text"
+                      defaultValue={settings?.storeName || 'ANTA Store'}
                       id="storeName"
                     />
                   </div>
                   <div className="form-group">
                     <label>Email Liên Hệ</label>
-                    <input 
-                      type="email" 
-                      defaultValue={settings?.email || 'admin@anta.com.vn'} 
+                    <input
+                      type="email"
+                      defaultValue={settings?.email || 'admin@anta.com.vn'}
                       id="email"
                     />
                   </div>
                   <div className="form-group">
                     <label>Số Điện Thoại</label>
-                    <input 
-                      type="tel" 
-                      defaultValue={settings?.phone || '1900 xxxx'} 
+                    <input
+                      type="tel"
+                      defaultValue={settings?.phone || '1900 xxxx'}
                       id="phone"
                     />
                   </div>
                   <div className="form-group">
                     <label>Địa Chỉ</label>
-                    <textarea 
-                      rows="3" 
+                    <textarea
+                      rows="3"
                       defaultValue={settings?.address || 'Hà Nội, Việt Nam'}
                       id="address"
                     ></textarea>
                   </div>
-                  <button 
+                  <button
                     className="save-settings-btn"
                     onClick={() => {
                       const newSettings = {
@@ -701,31 +723,31 @@ export default function AdminPage() {
                 <h3 className="settings-section-title">Cài Đặt Thông Báo</h3>
                 <div className="settings-options">
                   <label className="setting-option">
-                    <input 
-                      type="checkbox" 
+                    <input
+                      type="checkbox"
                       defaultChecked={settings?.notifications?.newOrders ?? true}
                       id="newOrders"
                     />
                     <span>Nhận thông báo đơn hàng mới</span>
                   </label>
                   <label className="setting-option">
-                    <input 
-                      type="checkbox" 
+                    <input
+                      type="checkbox"
                       defaultChecked={settings?.notifications?.messages ?? true}
                       id="messages"
                     />
                     <span>Nhận thông báo tin nhắn</span>
                   </label>
                   <label className="setting-option">
-                    <input 
-                      type="checkbox" 
+                    <input
+                      type="checkbox"
                       defaultChecked={settings?.notifications?.weeklyReport ?? false}
                       id="weeklyReport"
                     />
                     <span>Nhận email tổng kết hàng tuần</span>
                   </label>
                 </div>
-                <button 
+                <button
                   className="save-settings-btn"
                   onClick={() => {
                     const newSettings = {
@@ -756,7 +778,7 @@ export default function AdminPage() {
 
   return (
     <div className="admin-page">
-      <AdminSidebar 
+      <AdminSidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         unreadMessages={dashboardStats?.unreadMessages || 0}

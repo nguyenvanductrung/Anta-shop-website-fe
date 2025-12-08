@@ -35,7 +35,7 @@ export default function AdminAddProduct({ editingProduct = null, onSaved = () =>
 
   const [categories, setCategories] = useState([
     'Giày Bóng Rổ',
-    'Giày Chạy Bộ', 
+    'Giày Chạy Bộ',
     'Giày Lifestyle',
     'Áo Thun',
     'Áo Khoác',
@@ -47,24 +47,136 @@ export default function AdminAddProduct({ editingProduct = null, onSaved = () =>
   useEffect(() => {
     if (editingProduct) {
       // ... code khác ...
-      
+
       const cat = categories.find(c => c === editingProduct.category); // ✅ So sánh STRING
       if (cat) setSelectedCategory(cat);
-      
+
       // ...
     }
   }, [editingProduct]);
 
   // --------------------- CLEANUP FILE PREVIEWS ---------------------
   useEffect(() => {
-    return () => {
-      form.images?.forEach(img => {
-        if (img.file) {
-          try { URL.revokeObjectURL(img.src); } catch { }
-        }
+    if (!editingProduct) {
+      // reset form khi không còn editingProduct
+      setForm({
+        name: '',
+        brand: '',
+        description: '',
+        price: '',
+        totalStock: '',
+        category: '',
+        images: [],
+        thumbnail: ''
       });
-    };
-  }, []);
+      setVariants([]);
+      setSelectedCategory('');
+      return;
+    }
+
+    // Nếu có editingProduct -> gán vào form, variants, images
+    try {
+      // categories: nếu category từ product chưa có trong danh sách thì thêm vào đầu
+      if (editingProduct.category && !categories.includes(editingProduct.category)) {
+        setCategories(prev => [editingProduct.category, ...prev]);
+      }
+
+      // map images (backend thường trả mảng url)
+      // map images (backend thường trả mảng url)
+      const imgs = Array.isArray(editingProduct.images) ? editingProduct.images : (editingProduct.images ? [editingProduct.images] : []);
+      const mappedImages = imgs.map((url, idx) => ({
+        src: typeof url === 'string' ? url : (url?.url || url?.fileUrl || url?.path || ''),
+        file: null,          // không phải file local, do backend trả sẵn
+        id: typeof url === 'object' && (url.id || url._id) ? (url.id || url._id) : null,
+        isMain: Boolean(editingProduct.thumbnail ? (String(url) === String(editingProduct.thumbnail)) : (idx === 0))
+      }));
+
+      // set preliminary form so UI khoẻ khi mở edit
+      setForm(prev => ({
+        ...prev,
+        name: editingProduct.name || prev.name,
+        brand: editingProduct.brand || prev.brand,
+        description: editingProduct.description || prev.description,
+        price: editingProduct.price !== undefined && editingProduct.price !== null ? String(editingProduct.price) : prev.price,
+        totalStock: editingProduct.totalStock !== undefined && editingProduct.totalStock !== null ? String(editingProduct.totalStock) : prev.totalStock,
+        category: editingProduct.category || prev.category,
+        images: mappedImages,
+        thumbnail: editingProduct.thumbnail || (mappedImages[0]?.src || prev.thumbnail || '')
+      }));
+
+      // Try to fetch file metadata from cloud and merge ids/isMain (so we have DB file ids for later update)
+      (async () => {
+        try {
+          // call cloud service to get FileMetadata[] for this product
+          const resp = await cloudApi.get(`/api/cloud/product/${editingProduct.id}`);
+          const files = Array.isArray(resp?.data) ? resp.data : [];
+          if (!files.length) return;
+
+          // build lookup by exact url
+          const urlMap = new Map(files.map(f => [String(f.url), f]));
+
+          // also try lookup by filename tail as fallback (some urls might be normalized differently)
+          const filenameMap = new Map();
+          files.forEach(f => {
+            try {
+              const url = String(f.url || '');
+              const parts = url.split('/');
+              const tail = parts[parts.length - 1];
+              if (tail) filenameMap.set(tail, f);
+            } catch (e) { /* ignore */ }
+          });
+
+          // merge into current mappedImages
+          setForm(prev => {
+            const base = Array.isArray(prev.images) ? prev.images.slice() : [];
+            const merged = base.map(img => {
+              if (!img) return img;
+              const exact = urlMap.get(String(img.src));
+              if (exact) {
+                return { ...img, id: exact.id ?? exact._id ?? img.id, isMain: Boolean(exact.isMain) ?? img.isMain };
+              }
+              // fallback: try match by filename tail
+              const tail = String(img.src || '').split('/').pop();
+              const fallbackMeta = filenameMap.get(tail);
+              if (fallbackMeta) {
+                return { ...img, id: fallbackMeta.id ?? fallbackMeta._id ?? img.id, isMain: Boolean(fallbackMeta.isMain) ?? img.isMain };
+              }
+              return img;
+            });
+
+            // ensure exactly one isMain (prefer existing main)
+            if (!merged.some(m => m && m.isMain) && merged.length) merged[0].isMain = true;
+
+            // update thumbnail consistent with isMain
+            const mainImg = merged.find(m => m && m.isMain);
+            const thumbnail = mainImg?.src || prev.thumbnail || '';
+
+            return { ...prev, images: merged, thumbnail };
+          });
+
+        } catch (e) {
+          console.warn('Không thể lấy file metadata từ cloud để merge ids:', e);
+        }
+      })();
+
+
+      // map variants -> dùng chuỗi cho input values
+      const mappedVariants = Array.isArray(editingProduct.variants) ? editingProduct.variants.map((v) => ({
+        id: v.id ?? (`v-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`),
+        sku: v.sku ?? v.SKU ?? '',
+        size: v.size ?? (v.attributes && v.attributes.size) ?? '',
+        color: v.color ?? (v.attributes && v.attributes.color) ?? '',
+        price: v.price !== undefined && v.price !== null ? String(v.price) : '',
+        stock: (v.stock ?? v.quantity ?? 0) !== undefined ? String(v.stock ?? v.quantity ?? 0) : '',
+        attributes: v.attributes ? { ...v.attributes } : {}
+      })) : [];
+
+      setVariants(mappedVariants);
+      setSelectedCategory(editingProduct.category || '');
+    } catch (e) {
+      console.warn('Error mapping editingProduct into form', e);
+    }
+  }, [editingProduct]);
 
   // --------------------- FORM HELPERS ---------------------
   const onChange = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
@@ -175,11 +287,19 @@ export default function AdminAddProduct({ editingProduct = null, onSaved = () =>
       if (!productId) throw new Error("Product ID not returned");
 
       // -------------------- UPLOAD IMAGES --------------------
-      const pending = form.images.filter(i => i.file);
-      if (pending.length) {
+      // -------------------- UPLOAD IMAGES --------------------
+      const imagesSnapshot = Array.isArray(form.images) ? [...form.images] : [];
+
+      const pendingIndexed = imagesSnapshot
+        .map((img, idx) => ({ img, idx }))
+        .filter(x => x.img && x.img.file)
+        .map(x => ({ file: x.img.file, formIndex: x.idx, isMain: !!x.img.isMain }));
+
+      if (pendingIndexed.length) {
         setGlobalLoadingText('Đang upload ảnh lên Cloud...');
 
-        const files = pending.map(p => p.file);
+        // Prepare files preserving the form order for mapping back
+        const filesToUpload = pendingIndexed.map(p => p.file);
 
         // uploaderId = user.id
         let uploaderId = 0;
@@ -188,25 +308,75 @@ export default function AdminAddProduct({ editingProduct = null, onSaved = () =>
           if (user?.id) uploaderId = Number(user.id);
         } catch { }
 
-        const uploadedData = await uploadMultipleToCloud(files, { uploaderId });
+        const uploadedData = await uploadMultipleToCloud(filesToUpload, { uploaderId });
+        const uploadedArr = Array.isArray(uploadedData) ? uploadedData : (uploadedData?.data || []);
 
-        const uploadedArr = Array.isArray(uploadedData)
-          ? uploadedData
-          : uploadedData?.data || [];
+        // normalize uploaded metadata -> id + url
+        const normalizedUploaded = uploadedArr.map(u => ({
+          id: u?.id ?? u?._id ?? u?.fileId ?? null,
+          url: u?.url ?? u?.secure_url ?? u?.fileUrl ?? u?.path ?? null,
+          raw: u
+        }));
 
-        const imageIds = uploadedArr
-          .map(u => u.id || u._id || u.fileId)
-          .filter(Boolean);
+        // 1) map uploaded results back into imagesSnapshot by formIndex
+        const newImages = imagesSnapshot.slice(); // copy
+        normalizedUploaded.forEach((up, i) => {
+          const mapping = pendingIndexed[i];
+          if (!mapping) return;
+          const idx = mapping.formIndex;
+          const existing = newImages[idx] || {};
+          newImages[idx] = {
+            ...existing,
+            src: up.url || existing.src,
+            id: up.id || existing.id || null,
+            file: null,
+            isMain: existing.isMain || mapping.isMain
+          };
+        });
 
-        await cloudApi.put(`/api/cloud/update-product/${productId}`, imageIds);
+        // 2) collect finalIds from newImages (include existing ids and newly uploaded ids)
+        const finalIds = newImages.map(img => img && img.id).filter(Boolean);
 
-        // request product-service to sync images from cloud and return product with images
+        // 3) determine mainId robustly
+        let mainId = null;
+        const mainIndexInNew = newImages.findIndex(img => img && img.isMain);
+        if (mainIndexInNew !== -1 && newImages[mainIndexInNew]?.id) {
+          mainId = newImages[mainIndexInNew].id;
+        } else {
+          // if main is one of newly uploaded and assigned above, pick it
+          for (let i = 0; i < pendingIndexed.length; i++) {
+            if (pendingIndexed[i].isMain) {
+              const formIdx = pendingIndexed[i].formIndex;
+              const uploadedMeta = normalizedUploaded[i];
+              if (uploadedMeta && uploadedMeta.id) {
+                mainId = uploadedMeta.id;
+                break;
+              } else if (newImages[formIdx] && newImages[formIdx].id) {
+                mainId = newImages[formIdx].id;
+                break;
+              }
+            }
+          }
+        }
+        if (!mainId && finalIds.length) mainId = finalIds[0];
+
+        // 4) update local form state with newImages (so UI shows uploaded images immediately)
+        setForm(prev => ({ ...prev, images: newImages }));
+
+        // 5) call cloud update with full ids + mainId (object payload)
+        try {
+          await cloudApi.put(`/api/cloud/update-product/${productId}`, { ids: finalIds, mainId });
+        } catch (e) {
+          console.warn('update-product failed', e);
+          // continue to attempt sync/fetch
+        }
+
+        // 6) request product-service to sync images (preferred) or fallback to getProduct
         try {
           const sync = await adminProductService.syncProductImages(productId);
           if (sync?.success && sync.data) {
             onSaved(sync.data);
           } else {
-            // fallback: fetch product directly
             const refreshed = await adminProductService.getProduct(productId);
             onSaved(refreshed.data);
           }
@@ -215,9 +385,36 @@ export default function AdminAddProduct({ editingProduct = null, onSaved = () =>
           const refreshed = await adminProductService.getProduct(productId);
           onSaved(refreshed.data);
         }
+
       } else {
-        onSaved(res.data);
+        // No newly uploaded files. But user may have changed which image is main.
+        const finalIds = form.images.map(img => img && img.id).filter(Boolean);
+        let mainId = null;
+        const mainIndex = form.images.findIndex(img => img && img.isMain);
+        if (mainIndex !== -1 && form.images[mainIndex]?.id) mainId = form.images[mainIndex].id;
+        if (!mainId && finalIds.length) mainId = finalIds[0];
+
+        if (finalIds.length) {
+          try {
+            await cloudApi.put(`/api/cloud/update-product/${productId}`, { ids: finalIds, mainId });
+            const sync = await adminProductService.syncProductImages(productId);
+            if (sync?.success && sync.data) {
+              onSaved(sync.data);
+            } else {
+              const refreshed = await adminProductService.getProduct(productId);
+              onSaved(refreshed.data);
+            }
+          } catch (e) {
+            console.warn('update-product for existing images failed', e);
+            const refreshed = await adminProductService.getProduct(productId);
+            onSaved(refreshed.data);
+          }
+        } else {
+          // nothing to sync (no images)
+          onSaved(res.data);
+        }
       }
+
 
       alert("Lưu thành công");
     } catch (err) {
@@ -351,62 +548,64 @@ export default function AdminAddProduct({ editingProduct = null, onSaved = () =>
             <div className="form-input-group">
               <label className="input-label">Danh mục đã chọn</label>
               <div className="add-category-row">
-  <input
-    type="text"
-    className="form-text-input"
-    placeholder="Nhập danh mục mới…"
-    value={newCategory}
-    onChange={(e) => setNewCategory(e.target.value)}
-    onKeyDown={(e) => { if (e.key === "Enter") { // Enter cũng thêm
-        if (newCategory.trim() !== "") {
-          setCategories((prev) => [...prev, newCategory.trim()]);
-          setNewCategory("");
-        }
-      }}}
-  />
-  <button
-    type="button"
-    className="add-category-btn"
-    onClick={() => {
-      if (newCategory.trim() !== "") {
-        setCategories((prev) => [...prev, newCategory.trim()]);
-        setNewCategory("");
-      }
-    }}
-  >
-    + Thêm
-  </button>
-</div>
+                <input
+                  type="text"
+                  className="form-text-input"
+                  placeholder="Nhập danh mục mới…"
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { // Enter cũng thêm
+                      if (newCategory.trim() !== "") {
+                        setCategories((prev) => [...prev, newCategory.trim()]);
+                        setNewCategory("");
+                      }
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="add-category-btn"
+                  onClick={() => {
+                    if (newCategory.trim() !== "") {
+                      setCategories((prev) => [...prev, newCategory.trim()]);
+                      setNewCategory("");
+                    }
+                  }}
+                >
+                  + Thêm
+                </button>
+              </div>
               <input className="form-text-input" readOnly value={form.category} placeholder="Chọn danh mục bên dưới…" />
             </div>
 
             <div className="category-selection-list">
-  {categories.map((cat, idx) => (
-    <div 
-      className="category-selection-item" 
-      key={idx}
-      onClick={() => onChange('category', cat)} // ✅ Thêm onClick để chọn
-      style={{ cursor: 'pointer' }}
-    >
-      <span className="category-item-icon">
-        {form.category === cat ? '●' : '○'}
-      </span>
-      <span className="category-item-name">{cat}</span>
-      
-      <button
-        type="button"
-        className="delete-category-btn"
-        onClick={(e) => {
-          e.stopPropagation(); // ✅ Ngăn trigger onClick của parent
-          setCategories((prev) => prev.filter((c) => c !== cat));
-          if (form.category === cat) onChange('category', ''); // ✅ Clear nếu đang chọn
-        }}
-      >
-        ✕
-      </button>
-    </div>
-  ))}
-</div>
+              {categories.map((cat, idx) => (
+                <div
+                  className="category-selection-item"
+                  key={idx}
+                  onClick={() => onChange('category', cat)} // ✅ Thêm onClick để chọn
+                  style={{ cursor: 'pointer' }}
+                >
+                  <span className="category-item-icon">
+                    {form.category === cat ? '●' : '○'}
+                  </span>
+                  <span className="category-item-name">{cat}</span>
+
+                  <button
+                    type="button"
+                    className="delete-category-btn"
+                    onClick={(e) => {
+                      e.stopPropagation(); // ✅ Ngăn trigger onClick của parent
+                      setCategories((prev) => prev.filter((c) => c !== cat));
+                      if (form.category === cat) onChange('category', ''); // ✅ Clear nếu đang chọn
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="submit-actions-card">

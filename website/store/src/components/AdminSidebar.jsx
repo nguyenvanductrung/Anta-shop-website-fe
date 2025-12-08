@@ -41,7 +41,9 @@ export default function AdminSidebar({ activeTab, setActiveTab, unreadMessages =
     { id: 'shipping', label: 'Vận Chuyển', icon: '📦', color: '#F59E0B' },
     { id: 'messages', label: 'Tin Nhắn', icon: '💬', badge: unreadMessages, color: '#1EA75A' },
     { id: 'notifications', label: 'Thông Báo', icon: '🔔', badge: unreadNotifications, color: '#8B5CF6' },
-    { id: 'settings', label: 'Cài Đặt', icon: '⚙️', color: '#6B6B6B' }
+    { id: 'settings', label: 'Cài Đặt', icon: '⚙️', color: '#6B6B6B' },
+    { id: 'product-stats', label: 'Thống Kê SP', icon: '📈', color: '#0EA5A4' },
+
   ];
 
   return (

@@ -2,8 +2,7 @@
 import { productApi } from '../api';
 
 const USE_REAL_PRODUCT_API =
-  Boolean(import.meta.env.VITE_API_URL) ||
-  Boolean(import.meta.env.VITE_PRODUCT_SERVICE_URL);
+  Boolean(import.meta.env.VITE_API_URL);
 
 const productBase = '/api/product';
 const CLOUD_BASE_FALLBACK =

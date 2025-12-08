@@ -511,7 +511,7 @@ export default function CheckoutPage() {
                           {errors.address && <span className="error-message">{errors.address}</span>}
                         </div>
 
-                        <div className="form-group">
+                        {/* <div className="form-group">
                           <label htmlFor="city">Tỉnh/Thành phố <span className="required">*</span></label>
                           <select id="city" name="city" value={formData.city} onChange={handleInputChange} onBlur={handleInputBlur} className={errors.city ? 'error' : ''}>
                             <option value="">Chọn Tỉnh/Thành phố</option>
@@ -534,7 +534,7 @@ export default function CheckoutPage() {
                         <div className="form-group">
                           <label htmlFor="ward">Phường/Xã</label>
                           <input type="text" id="ward" name="ward" value={formData.ward} onChange={handleInputChange} placeholder="Nhập Phường/Xã" />
-                        </div>
+                        </div> */}
 
                         <div className="form-group full-width">
                           <label htmlFor="note">Ghi chú đơn hàng</label>
