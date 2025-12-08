@@ -6,6 +6,16 @@ import GlobalLoader from './GlobalLoader';
 import './AdminAddProduct.css';
 
 export default function AdminAddProduct({ editingProduct = null, onSaved = () => { }, onCancel = () => { } }) {
+  // const [categories, setCategories] = useState([
+  //   "Giày Bóng Rổ",
+  //   "Giày Chạy Bộ",
+  //   "Giày Lifestyle",
+  //   "Áo Thun",
+  //   "Áo Khoác",
+  //   "Quần Short",
+  //   "Quần Dài",
+  //   "Phụ Kiện"
+  // ]);
   const [form, setForm] = useState({
     name: '',
     brand: '',
@@ -16,74 +26,32 @@ export default function AdminAddProduct({ editingProduct = null, onSaved = () =>
     images: [],
     thumbnail: ''
   });
-
+  const [newCategory, setNewCategory] = useState('');
   const [variants, setVariants] = useState([]);
   const [loading, setLoading] = useState(false);
   const [globalLoadingText, setGlobalLoadingText] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState('');
   const fileRef = useRef(null);
 
-  const categories = [
-    { id: 'giay-bong-ro', name: 'Giày Bóng Rổ' },
-    { id: 'giay-chay-bo', name: 'Giày Chạy Bộ' },
-    { id: 'giay-lifestyle', name: 'Giày Lifestyle' },
-    { id: 'ao-thun', name: 'Áo Thun' },
-    { id: 'ao-khoac', name: 'Áo Khoác' },
-    { id: 'quan-short', name: 'Quần Short' },
-    { id: 'quan-dai', name: 'Quần Dài' },
-    { id: 'phu-kien', name: 'Phụ Kiện' }
-  ];
-
+  const [categories, setCategories] = useState([
+    'Giày Bóng Rổ',
+    'Giày Chạy Bộ', 
+    'Giày Lifestyle',
+    'Áo Thun',
+    'Áo Khoác',
+    'Quần Short',
+    'Quần Dài',
+    'Phụ Kiện'
+  ]);
   // --------------------- HANDLE EDITING PRODUCT ---------------------
   useEffect(() => {
     if (editingProduct) {
-      const backendImgs = (editingProduct.images || []).map(src => ({
-        src,
-        isMain: src === editingProduct.thumbnail,
-        id: null
-      }));
-
-      if (!backendImgs.some(i => i.isMain) && backendImgs.length)
-        backendImgs[0].isMain = true;
-
-      setForm({
-        name: editingProduct.name || '',
-        brand: editingProduct.brand || '',
-        description: editingProduct.description || '',
-        price: editingProduct.price ?? '',
-        totalStock: editingProduct.totalStock ?? editingProduct.quantity ?? editingProduct.stock ?? '',
-        category: editingProduct.category || '',
-        images: backendImgs,
-        thumbnail: editingProduct.thumbnail || backendImgs[0]?.src || ''
-      });
-
-      const cat = categories.find(c => c.name === editingProduct.category);
-      if (cat) setSelectedCategory(cat.id);
-
-      setVariants(
-        (editingProduct.variants || []).map(v => ({
-          id: v.id || `v-${Date.now()}`,
-          sku: v.sku || v.SKU || '',
-          size: v.size || '',
-          color: v.color || '',
-          price: v.price ?? '',
-          stock: v.stock ?? '',
-          attributes: v.attributes || {}
-        }))
-      );
-    } else {
-      setForm({
-        name: '',
-        brand: '',
-        description: '',
-        price: '',
-        totalStock: '',
-        category: '',
-        images: [],
-        thumbnail: ''
-      });
-      setVariants([]);
-      setSelectedCategory('');
+      // ... code khác ...
+      
+      const cat = categories.find(c => c === editingProduct.category); // ✅ So sánh STRING
+      if (cat) setSelectedCategory(cat);
+      
+      // ...
     }
   }, [editingProduct]);
 
@@ -382,24 +350,63 @@ export default function AdminAddProduct({ editingProduct = null, onSaved = () =>
 
             <div className="form-input-group">
               <label className="input-label">Danh mục đã chọn</label>
+              <div className="add-category-row">
+  <input
+    type="text"
+    className="form-text-input"
+    placeholder="Nhập danh mục mới…"
+    value={newCategory}
+    onChange={(e) => setNewCategory(e.target.value)}
+    onKeyDown={(e) => { if (e.key === "Enter") { // Enter cũng thêm
+        if (newCategory.trim() !== "") {
+          setCategories((prev) => [...prev, newCategory.trim()]);
+          setNewCategory("");
+        }
+      }}}
+  />
+  <button
+    type="button"
+    className="add-category-btn"
+    onClick={() => {
+      if (newCategory.trim() !== "") {
+        setCategories((prev) => [...prev, newCategory.trim()]);
+        setNewCategory("");
+      }
+    }}
+  >
+    + Thêm
+  </button>
+</div>
               <input className="form-text-input" readOnly value={form.category} placeholder="Chọn danh mục bên dưới…" />
             </div>
 
             <div className="category-selection-list">
-              {categories.map(c => (
-                <button
-                  key={c.id}
-                  type="button"
-                  className={`category-selection-item ${selectedCategory === c.id ? 'selected' : ''}`}
-                  onClick={() => {
-                    setSelectedCategory(c.id);
-                    setForm(prev => ({ ...prev, category: c.name }));
-                  }}>
-                  <span className="category-item-icon">{selectedCategory === c.id ? "✓" : "○"}</span>
-                  <span className="category-item-name">{c.name}</span>
-                </button>
-              ))}
-            </div>
+  {categories.map((cat, idx) => (
+    <div 
+      className="category-selection-item" 
+      key={idx}
+      onClick={() => onChange('category', cat)} // ✅ Thêm onClick để chọn
+      style={{ cursor: 'pointer' }}
+    >
+      <span className="category-item-icon">
+        {form.category === cat ? '●' : '○'}
+      </span>
+      <span className="category-item-name">{cat}</span>
+      
+      <button
+        type="button"
+        className="delete-category-btn"
+        onClick={(e) => {
+          e.stopPropagation(); // ✅ Ngăn trigger onClick của parent
+          setCategories((prev) => prev.filter((c) => c !== cat));
+          if (form.category === cat) onChange('category', ''); // ✅ Clear nếu đang chọn
+        }}
+      >
+        ✕
+      </button>
+    </div>
+  ))}
+</div>
           </div>
 
           <div className="submit-actions-card">
