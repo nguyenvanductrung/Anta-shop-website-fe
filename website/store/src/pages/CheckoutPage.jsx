@@ -5,9 +5,9 @@ import { Layout } from '../components';
 import { useCart, useAuth, useDataSync, useUserData } from '../contexts';
 import adminService from '../services/adminService';
 import { momoPaymentService } from '../services';
+import { productService, userService, orderService } from '../services/api';
 import { generateVNPayQR, generateBankTransferQR } from '../utils/qrCodeGenerator';
 import './CheckoutPage.css';
-
 // --- Helpers: đọc profile & sổ địa chỉ từ localStorage và chuẩn hoá ---
 const getStoredProfile = () => {
   try {
@@ -29,9 +29,7 @@ function normalizeAddr(a) {
   return {
     id: a.id ?? a._id ?? a.key,
     recipientName: a.recipientName || a.name || a.fullName || '',
-    // hỗ trợ cả phone và phoneNumber
     phoneNumber: a.phoneNumber || a.phone || '',
-    // hỗ trợ cả detailedAddress và address
     detailedAddress: a.detailedAddress || a.address || '',
     address: a.address || a.detailedAddress || '',
     country: a.country || '',
@@ -247,17 +245,36 @@ export default function CheckoutPage() {
       phone: validateField('phone', formData.phone),
       email: validateField('email', formData.email),
       address: validateField('address', formData.address),
-      city: validateField('city', formData.city)
     };
+
+    if (formData.city && formData.city !== '') {
+      newErrors.city = validateField('city', formData.city);
+    } else {
+      newErrors.city = '';
+    }
+
     setErrors(newErrors);
+
+    const firstErrKey = Object.keys(newErrors).find(k => newErrors[k]);
+    if (firstErrKey) {
+      const el = document.querySelector(`[name="${firstErrKey}"]`);
+      if (el) el.focus();
+    }
+
     return !Object.values(newErrors).some(Boolean);
   };
 
   const handleNextStep = () => {
     if (currentStep === 1) {
-      if (validateStep1()) { setCurrentStep(2); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+      if (validateStep1()) {
+        setCurrentStep(2);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        alert('Vui lòng kiểm tra và sửa các trường thông tin giao hàng (các ô màu đỏ).');
+      }
     } else if (currentStep === 2) {
-      setCurrentStep(3); window.scrollTo({ top: 0, behavior: 'smooth' });
+      setCurrentStep(3);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
   const handlePrevStep = () => { if (currentStep > 1) { setCurrentStep(currentStep - 1); window.scrollTo({ top: 0, behavior: 'smooth' }); } };
@@ -283,9 +300,9 @@ export default function CheckoutPage() {
         totalItems: orderData.products?.length || orderData.items?.length,
         image: orderData.items?.[0]?.image || orderData.products?.[0]?.image || 'https://via.placeholder.com/400',
         customer: orderData.customer,
-        products: orderData.products || orderData.items?.map(item => ({
+        products: orderData.products || (orderData.items?.map(item => ({
           id: item.id, name: item.name, image: item.image, price: item.price, quantity: item.quantity, size: item.size, color: item.color
-        })),
+        })) || []),
         subtotal: orderData.subtotal,
         discount: orderData.discount,
         shipping: orderData.shipping,
@@ -298,101 +315,253 @@ export default function CheckoutPage() {
     } catch (e) { console.error('saveOrderToLocalStorage error', e); return false; }
   };
 
-  const generateQRCodeForPayment = () => {
+  // Generate QR (kept as-is mostly)
+  // inside component
+  // (inside CheckoutPage) - replace generateQRCodeForPayment with this version
+  const generateQRCodeForPayment = async () => {
     const orderNumber = `ANT${Date.now().toString().slice(-8)}`;
-    const orderData = { total: finalTotal, orderNumber };
-    let qrInfo, transactionId = null;
-    switch (paymentMethod) {
-      case 'momo': {
-        const momoRequest = momoPaymentService.createPaymentRequest(orderData);
-        if (momoRequest.success) {
-          transactionId = momoRequest.data.transactionId;
-          const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(momoRequest.data.qrCodeData.qrContent)}`;
-          qrInfo = { ...momoRequest.data.qrCodeData, qrCodeUrl, transactionId };
-          setMomoTransactionId(transactionId);
-          startMoMoSimulation(transactionId);
-        }
-        break;
+
+    // 1) build normalized items
+    const normalizedItems = items.map(it => ({
+      productId: Number(it.productId ?? it.id ?? null),
+      variantId: Number(it.variantId ?? it.variant?.id ?? null),
+      quantity: Number(it.quantity ?? it.qty ?? 1),
+      price: Number(it.price ?? 0)
+    }));
+
+    const shippingAddress = `${formData.address || ''}${formData.ward ? ', ' + formData.ward : ''}${formData.district ? ', ' + formData.district : ''}${formData.city ? ', ' + formData.city : ''}`;
+
+    const orderPayload = {
+      orderNumber,
+      userId: (user && user.id) || (JSON.parse(localStorage.getItem('anta_user_profile') || 'null')?.id) || null,
+      items: normalizedItems,
+      shippingAddress,
+      subtotal: totalPrice,
+      discount,
+      shipping,
+      total: finalTotal,
+      paymentMethod: 'MOMO', // cho order record
+      shippingMethod,
+      customer: {
+        fullName: formData.fullName,
+        email: formData.email,
+        phone: formData.phone
       }
-      case 'vnpay': qrInfo = generateVNPayQR(orderData); break;
-      case 'bank': qrInfo = generateBankTransferQR(orderData); break;
-      default: return null;
+    };
+
+    setPaymentProgress({ status: 'creating-order' });
+
+    // 2) create order on order-service (should persist to MySQL and return orderId)
+    let orderResp;
+    try {
+      orderResp = await orderService.createOrder(orderPayload);
+    } catch (err) {
+      setPaymentProgress({ status: 'failed', message: 'Không tạo được đơn hàng: ' + (err?.message || err) });
+      console.error('createOrder failed', err);
+      return;
     }
-    setQrData({ ...qrInfo, orderNumber }); setShowQRCode(true);
+
+    // Ensure orderResp contains orderId and total (adjust based on your order-service response shape)
+    const orderId = orderResp?.orderId ?? orderResp?.id ?? orderResp?.data?.orderId;
+    const serverTotal = orderResp?.total ?? orderResp?.data?.total ?? orderPayload.total;
+
+    if (!orderId) {
+      setPaymentProgress({ status: 'failed', message: 'Server không trả về orderId' });
+      console.error('order creation response', orderResp);
+      return;
+    }
+
+    setPaymentProgress({ status: 'created-order', orderId });
+
+    // 3) call payment-service to create MoMo request with the real orderId and amount
+    setPaymentProgress({ status: 'creating-payment' });
+    const paymentReqPayload = { orderId, userId: orderPayload.userId, amount: serverTotal };
+
+    const resp = await momoPaymentService.createPaymentRequest(paymentReqPayload);
+    if (!resp.success) {
+      setPaymentProgress({ status: 'failed', message: resp.error || 'Không tạo được yêu cầu thanh toán' });
+      // Optionally update order status to FAILED/ CANCELLED via orderService if desired
+      return;
+    }
+
+    const data = resp.data || {};
+
+    // Build qrCodeUrl (choose whichever the backend returns)
+    let qrCodeUrl = null;
+    if (data.qrImageBase64) qrCodeUrl = `data:image/png;base64,${data.qrImageBase64}`;
+    else if (data.qrCodeUrl) qrCodeUrl = data.qrCodeUrl;
+    else if (data.deeplink) qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(data.deeplink)}`;
+    else if (data.payUrl) qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(data.payUrl)}`;
+
+    if (!qrCodeUrl) {
+      setPaymentProgress({ status: 'failed', message: 'Provider không trả về QR hoặc payUrl' });
+      return;
+    }
+
+    setQrData({
+      transactionId: data.transactionId || data.requestId || data.orderId,
+      requestId: data.requestId || null,
+      orderId,
+      qrCodeUrl,
+      qrContent: data.deeplink || data.payUrl || null,
+      amount: data.amount ?? serverTotal,
+      orderNumber
+    });
+
+    setMomoTransactionId(data.requestId || data.transactionId || null);
+    setShowQRCode(true);
+    setPaymentProgress(null);
+
+    // 4) optionally: start polling backend for order status (in Background)
+    momoPaymentService.autoProcessPayment(data.requestId || data.transactionId || data.requestId || data.orderId, (p) => setPaymentProgress(p), { interval: 3000, timeout: 120000 })
+      .then(result => {
+        if (result.success) {
+          setPaymentConfirmed(true);
+          // finalize local UI and clear cart
+          clearCart();
+          navigate('/order-success', { state: { orderId, orderData: orderResp } });
+        } else {
+          // timeout or failed -> user will confirm manually or check order
+          console.warn('momo auto poll ended', result);
+        }
+      }).catch(err => console.warn('autoProcessPayment error', err));
   };
 
+
   const startMoMoSimulation = async (transactionId) => {
-    const result = await momoPaymentService.autoProcessPayment(transactionId, setPaymentProgress);
-    if (result.success) {
-      setTimeout(() => {
-        setPaymentConfirmed(true);
-        setPaymentProgress({ status: 'success', message: 'Thanh toán thành công!' });
-        setTimeout(() => { setShowQRCode(false); processOrder(); }, 1500);
-      }, 500);
-    } else {
-      setPaymentProgress({ status: 'failed', message: result.error || 'Thanh toán thất bại. Vui lòng thử lại.' });
+    try {
+      const result = await momoPaymentService.autoProcessPayment(transactionId, setPaymentProgress);
+      if (result.success) {
+        setTimeout(() => {
+          setPaymentConfirmed(true);
+          setPaymentProgress({ status: 'success', message: 'Thanh toán thành công!' });
+          setTimeout(() => { setShowQRCode(false); processOrder(); }, 1500);
+        }, 500);
+      } else {
+        setPaymentProgress({ status: 'failed', message: result.error || 'Thanh toán thất bại. Vui lòng thử lại.' });
+      }
+    } catch (err) {
+      setPaymentProgress({ status: 'failed', message: err?.message || 'Lỗi thanh toán' });
     }
   };
 
   const handleConfirmPayment = async () => { setPaymentConfirmed(true); setShowQRCode(false); await processOrder(); };
   const handleCancelQR = () => {
-    if (momoTransactionId && paymentMethod === 'momo') momoPaymentService.cancelPayment(momoTransactionId);
+    if (momoTransactionId && paymentMethod === 'momo') momoPaymentService.cancelPayment?.(momoTransactionId);
     if (paymentTimerRef.current) clearTimeout(paymentTimerRef.current);
     setPaymentProgress(null); setShowQRCode(false);
   };
 
+  // --- CHÍNH: processOrder dùng adminService.orders.createOrder và ensure mỗi item có image ---
+  // NEW: processOrder thực tế -> gọi order-service, xử lý MoMo (mở payUrl) và poll trạng thái order
   const processOrder = async () => {
     setIsSubmitting(true);
     try {
-      const selectedMethod = PAYMENT_METHODS.find(m => m.id === paymentMethod);
-      const isQRPayment = selectedMethod?.requireQR;
-      const orderData = {
-        customer: { ...formData, paymentMethod, shippingMethod },
-        items,
-        subtotal: totalPrice,
-        discount,
-        shipping,
-        total: finalTotal,
-        promoCode: appliedPromo?.code || '',
-        orderDate: new Date().toISOString(),
-        paymentStatus: paymentMethod === 'cod' ? 'pending' : (isQRPayment && paymentConfirmed ? 'paid' : 'pending')
+      // xác định userId từ context / localStorage
+      const storedUser = JSON.parse(localStorage.getItem('anta_user_profile') || 'null') || {};
+      const userId = (user && user.id) || storedUser.id || null;
+
+      // chuẩn hoá items theo backend: variantId bắt buộc
+      const normalizedItems = await Promise.all(items.map(async (it) => {
+        // backend expects: { productId, variantId, quantity, note? }
+        // try find variantId from item.variantId or item.id if that's variant
+        const variantId = it.variantId ?? it.id ?? it.variant?.id ?? null;
+        const productId = it.productId ?? it.id ?? null;
+        return {
+          productId: productId ? Number(productId) : null,
+          variantId: variantId ? Number(variantId) : null,
+          quantity: Number(it.quantity || it.qty || 1),
+          note: it.note || undefined,
+        };
+      }));
+
+      // shippingAddress: compose string from form
+      const shippingAddress = `${formData.address || ''}${formData.ward ? ', ' + formData.ward : ''}${formData.district ? ', ' + formData.district : ''}${formData.city ? ', ' + formData.city : ''}`;
+
+      const payload = {
+        userId: userId ? Number(userId) : null,
+        items: normalizedItems,
+        shippingAddress: shippingAddress,
+        paymentMethod: paymentMethod === 'momo' ? 'MOMO' : (paymentMethod === 'vnpay' ? 'VNPAY' : (paymentMethod === 'bank' ? 'BANK_TRANSFER' : 'COD')),
       };
 
-      // ✅ dùng đúng biến import
-      const result = await adminService.createOrder(orderData);
-
-      if (result.success) {
-        const newOrder = result.data;
-        saveOrderToLocalStorage(newOrder);
-        clearCart();
-        localStorage.removeItem('checkout_data');
-        if (dataSync) dataSync.emitOrdersUpdate({ action: 'create', order: result.data });
-
-        navigate('/order-success', {
-          state: {
-            orderData: result.data,
-            orderNumber: result.data.orderNumber,
-            total: finalTotal,
-            paymentMethod,
-            paymentConfirmed
-          }
-        });
-      } else {
-        throw new Error(result.error || 'Đặt hàng thất bại');
+      // Call order-service (this will create order row in MySQL via backend)
+      const resp = await orderService.createOrder(payload);
+      // resp expected shape: { orderId, status, payUrl }
+      // if resp contains payUrl (MoMo), open it in new tab for user
+      if (resp && resp.payUrl) {
+        // open payment link in new tab/window
+        window.open(resp.payUrl, "_blank");
       }
-    } catch (error) {
-      console.error('Error placing order:', error);
-      alert('Có lỗi xảy ra khi đặt hàng. Vui lòng thử lại!');
-      setPaymentConfirmed(false);
+
+      // poll order status until PAID/FAILED/CANCELLED (backend must persist and update when IPN)
+      if (resp && resp.orderId) {
+        const pollResult = await (async function pollOrderStatus(orderId) {
+          let tries = 0;
+          const maxTries = 60; // up to e.g. 2 minutes (60 * 2s)
+          let delayMs = 2000;
+          while (tries < maxTries) {
+            try {
+              const o = await orderService.getOrder(orderId);
+              // o.status should be like 'PENDING_PAYMENT', 'PAID', 'FAILED' ...
+              const s = (o?.status || '').toUpperCase();
+              if (s === 'PAID' || s === 'DELIVERED' || s === 'CONFIRMED') {
+                return { ok: true, order: o };
+              }
+              if (s === 'FAILED' || s === 'CANCELLED') {
+                return { ok: false, order: o };
+              }
+            } catch (err) {
+              // ignore read errors, continue polling
+              console.warn('pollOrderStatus error', err);
+            }
+            // wait and retry
+            await new Promise(r => setTimeout(r, delayMs));
+            tries++;
+            // backoff (but cap)
+            if (delayMs < 10000) delayMs = Math.min(10000, delayMs + 1000);
+          }
+          return { ok: null, order: null };
+        })(resp.orderId);
+
+        // handle poll result
+        if (pollResult.ok === true) {
+          // paid
+          saveOrderToLocalStorage(pollResult.order || resp);
+          clearCart();
+          navigate('/order-success', { state: { orderData: pollResult.order || resp } });
+          return;
+        } else if (pollResult.ok === false) {
+          // payment failed/cancelled
+          saveOrderToLocalStorage(pollResult.order || resp);
+          alert('Thanh toán không thành công. Vui lòng thử lại hoặc chọn phương thức khác.');
+          navigate('/order-failed', { state: { orderData: pollResult.order || resp } });
+          return;
+        } else {
+          // timed out
+          saveOrderToLocalStorage(resp);
+          alert('Đơn hàng đã được tạo. Vui lòng kiểm tra trạng thái đơn hàng sau hoặc liên hệ hỗ trợ.');
+          navigate('/order-success', { state: { orderData: resp } });
+          return;
+        }
+      } else {
+        // no orderId returned -> treat as error
+        throw new Error('Không nhận được orderId từ server');
+      }
+    } catch (err) {
+      console.error('Error placing order (real):', err);
+      alert('Có lỗi xảy ra khi đặt hàng: ' + (err?.message || err));
     } finally {
       setIsSubmitting(false);
     }
   };
 
+
   const handlePlaceOrder = async (e) => {
     e.preventDefault();
     if (!validateStep1()) { setCurrentStep(1); alert('Vui lòng kiểm tra lại thông tin giao hàng'); return; }
-    if (items.length === 0) { alert('Giỏ hàng trống'); return; }
+    if (!items || items.length === 0) { alert('Giỏ hàng trống'); return; }
+
 
     const selectedMethod = PAYMENT_METHODS.find(m => m.id === paymentMethod);
     if (selectedMethod?.requireQR && !qrData) { generateQRCodeForPayment(); return; }
@@ -462,7 +631,6 @@ export default function CheckoutPage() {
                     <div className="checkout-section active">
                       <h2 className="section-title">Thông tin giao hàng</h2>
 
-                      {/* ✅ Địa chỉ đang dùng + nút Thay đổi */}
                       <div className="selected-address-card">
                         <div className="sel-left">
                           <div className="sel-title">Địa chỉ nhận hàng</div>
@@ -510,31 +678,6 @@ export default function CheckoutPage() {
                           <input type="text" id="address" name="address" value={formData.address} onChange={handleInputChange} onBlur={handleInputBlur} placeholder="Số nhà, tên đường..." className={errors.address ? 'error' : ''} />
                           {errors.address && <span className="error-message">{errors.address}</span>}
                         </div>
-
-                        {/* <div className="form-group">
-                          <label htmlFor="city">Tỉnh/Thành phố <span className="required">*</span></label>
-                          <select id="city" name="city" value={formData.city} onChange={handleInputChange} onBlur={handleInputBlur} className={errors.city ? 'error' : ''}>
-                            <option value="">Chọn Tỉnh/Thành phố</option>
-                            <option value="hanoi">Hà Nội</option>
-                            <option value="hcm">TP. Hồ Chí Minh</option>
-                            <option value="danang">Đà Nẵng</option>
-                            <option value="haiphong">Hải Phòng</option>
-                            <option value="cantho">Cần Thơ</option>
-                            <option value="binhduong">Bình Dương</option>
-                            <option value="dongnai">Đồng Nai</option>
-                          </select>
-                          {errors.city && <span className="error-message">{errors.city}</span>}
-                        </div>
-
-                        <div className="form-group">
-                          <label htmlFor="district">Quận/Huyện</label>
-                          <input type="text" id="district" name="district" value={formData.district} onChange={handleInputChange} placeholder="Nhập Quận/Huyện" />
-                        </div>
-
-                        <div className="form-group">
-                          <label htmlFor="ward">Phường/Xã</label>
-                          <input type="text" id="ward" name="ward" value={formData.ward} onChange={handleInputChange} placeholder="Nhập Phường/Xã" />
-                        </div> */}
 
                         <div className="form-group full-width">
                           <label htmlFor="note">Ghi chú đơn hàng</label>
@@ -718,42 +861,30 @@ export default function CheckoutPage() {
               </div>
 
               <div className="qr-content">
-                {paymentMethod === 'momo' && paymentProgress ? (
-                  <div className="payment-simulation">
-                    <div className="qr-code-wrapper-small"><img src={qrData.qrCodeUrl} alt="QR Code" className="qr-code-image" /></div>
-                    <div className="simulation-progress">
-                      {paymentProgress.status === 'scanning' && (<div className="progress-step active"><div className="progress-spinner"></div><p className="progress-message">{paymentProgress.message}</p></div>)}
-                      {paymentProgress.status === 'detected' && (<div className="progress-step active"><div className="progress-icon success">✓</div><p className="progress-message">{paymentProgress.message}</p></div>)}
-                      {paymentProgress.status === 'opening_app' && (<div className="progress-step active"><div className="progress-spinner"></div><p className="progress-message">{paymentProgress.message}</p></div>)}
-                      {paymentProgress.status === 'processing' && (<div className="progress-step active"><div className="progress-spinner"></div><p className="progress-message">{paymentProgress.message}</p></div>)}
-                      {paymentProgress.status === 'success' && (<div className="progress-step active success"><div className="progress-icon success-large">✓</div><p className="progress-message success-text">{paymentProgress.message}</p><p className="progress-submessage">Đang chuyển đến trang xác nhận...</p></div>)}
-                      {paymentProgress.status === 'failed' && (<div className="progress-step active failed"><div className="progress-icon failed-large">✕</div><p className="progress-message failed-text">{paymentProgress.message}</p><button className="btn-retry" onClick={() => { setPaymentProgress(null); setShowQRCode(false); setQrData(null); }}>Thử lại</button></div>)}
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div className="qr-code-wrapper"><img src={qrData.qrCodeUrl} alt="QR Code" className="qr-code-image" /></div>
-                    <div className="payment-info">
-                      <h3>Thông tin chuyển khoản</h3>
-                      <div className="payment-detail-row"><span className="detail-label">Số tài khoản:</span><span className="detail-value">{qrData.bankAccount || qrData.phoneNumber}</span></div>
-                      <div className="payment-detail-row"><span className="detail-label">Ngân hàng:</span><span className="detail-value">{qrData.bankName || qrData.bankCode}</span></div>
-                      <div className="payment-detail-row"><span className="detail-label">Chủ tài khoản:</span><span className="detail-value">{qrData.accountName}</span></div>
-                      <div className="payment-detail-row"><span className="detail-label">Số tiền:</span><span className="detail-value amount">{qrData.amount.toLocaleString()}₫</span></div>
-                      <div className="payment-detail-row"><span className="detail-label">Nội dung:</span><span className="detail-value">{qrData.note}</span></div>
-                      {qrData.transactionId && (<div className="payment-detail-row"><span className="detail-label">Mã giao dịch:</span><span className="detail-value transaction-id">{qrData.transactionId}</span></div>)}
-                    </div>
+                <div className="qr-code-wrapper">
+                  <img src={qrData.qrCodeUrl} alt="QR Code" className="qr-code-image" />
+                </div>
 
-                    {paymentMethod !== 'momo' && (
-                      <>
-                        <div className="qr-notice"><span className="notice-icon">⚠️</span><p>Sau khi chuyển khoản thành công, vui lòng nhấn "Xác nhận đã thanh toán" bên dưới</p></div>
-                        <div className="qr-actions">
-                          <button className="btn-secondary" onClick={handleCancelQR}>Hủy</button>
-                          <button className="btn-primary" onClick={handleConfirmPayment} disabled={isSubmitting}>{isSubmitting ? 'Đang xử lý...' : 'Xác nhận đã thanh toán'}</button>
-                        </div>
-                      </>
-                    )}
-                  </>
-                )}
+                <div className="payment-info">
+                  <h3>Thông tin thanh toán</h3>
+                  <div className="payment-detail-row"><span className="detail-label">Số tài khoản / SĐT:</span><span className="detail-value">{qrData.bankAccount || qrData.phoneNumber}</span></div>
+                  <div className="payment-detail-row"><span className="detail-label">Ngân hàng:</span><span className="detail-value">{qrData.bankName || qrData.bankCode}</span></div>
+                  <div className="payment-detail-row"><span className="detail-label">Chủ tài khoản:</span><span className="detail-value">{qrData.accountName}</span></div>
+                  <div className="payment-detail-row"><span className="detail-label">Số tiền:</span><span className="detail-value amount">{qrData.amount.toLocaleString()}₫</span></div>
+                  <div className="payment-detail-row"><span className="detail-label">Nội dung:</span><span className="detail-value">{qrData.note}</span></div>
+                  {qrData.transactionId && (<div className="payment-detail-row"><span className="detail-label">Mã giao dịch:</span><span className="detail-value transaction-id">{qrData.transactionId}</span></div>)}
+                </div>
+
+                <div className="qr-notice"><span className="notice-icon">⚠️</span>
+                  <p>Quét mã QR bằng app MoMo / ngân hàng. Sau khi chuyển tiền thành công, nhấn "Xác nhận đã thanh toán".</p>
+                </div>
+
+                <div className="qr-actions">
+                  <button className="btn-secondary" onClick={handleCancelQR}>Hủy</button>
+                  <button className="btn-primary" onClick={handleConfirmPayment} disabled={isSubmitting}>
+                    {isSubmitting ? 'Đang xử lý...' : 'Xác nhận đã thanh toán'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
