@@ -1,4 +1,4 @@
-// Mock Authentication Service
+// src/services/mockAuthService.js
 import { STORAGE_KEYS } from "../constants";
 
 const delay = (ms = 500) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -8,7 +8,7 @@ const getRegisteredUsers = () => {
   try {
     const users = localStorage.getItem("anta_registered_users");
     return users ? JSON.parse(users) : [];
-  } catch (error) {
+  } catch {
     return [];
   }
 };
@@ -24,10 +24,10 @@ const createMockToken = (username, email, role = "USER") => {
   const payload = btoa(
     JSON.stringify({
       sub: username,
-      role: role,
-      email: email,
+      role,
+      email,
       iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + 86400, // 24 hours
+      exp: Math.floor(Date.now() / 1000) + 86400, // 24h
     })
   );
   const signature = btoa("mock-signature");
@@ -46,42 +46,31 @@ export const mockAuthService = {
     if (!username || !email || !password) {
       throw new Error("Vui lòng điền đầy đủ thông tin");
     }
-
     if (username.length < 3) {
       throw new Error("Username phải có ít nhất 3 ký tự");
     }
-
     if (password.length < 6) {
       throw new Error("Mật khẩu phải có ít nhất 6 ký tự");
     }
-
-    // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       throw new Error("Email không hợp lệ");
     }
 
-    // Get existing users
     const users = getRegisteredUsers();
 
-    // Check if username already exists
-    if (
-      users.some((u) => u.username.toLowerCase() === username.toLowerCase())
-    ) {
+    if (users.some((u) => u.username.toLowerCase() === username.toLowerCase())) {
       throw new Error("Username đã tồn tại");
     }
-
-    // Check if email already exists
     if (users.some((u) => u.email.toLowerCase() === email.toLowerCase())) {
       throw new Error("Email đã được sử dụng");
     }
 
-    // Create new user
     const newUser = {
       id: Date.now(),
       username,
       email,
-      password, // In production, this should be hashed
+      password, // ⚠️ trong production phải hash
       role: "USER",
       createdAt: new Date().toISOString(),
       profile: {
@@ -92,7 +81,6 @@ export const mockAuthService = {
       },
     };
 
-    // Save user
     users.push(newUser);
     saveRegisteredUsers(users);
 
@@ -114,13 +102,14 @@ export const mockAuthService = {
 
     const { username, password } = credentials;
 
-    // Check for hardcoded admin
+    // Hardcoded admin
     if (username === "admin" && password === "abc123!@#") {
       const token = createMockToken("admin", "admin@anta.com", "ADMIN");
       return {
         success: true,
         token,
         user: {
+          id: 1, // thêm id giả lập
           username: "admin",
           email: "admin@anta.com",
           role: "ADMIN",
@@ -128,13 +117,14 @@ export const mockAuthService = {
       };
     }
 
-    // Check for hardcoded test user
+    // Hardcoded test user
     if (username === "user" && password === "123456") {
       const token = createMockToken("user", "user@anta.com", "USER");
       return {
         success: true,
         token,
         user: {
+          id: 4, // thêm id giả lập
           username: "user",
           email: "user@anta.com",
           role: "USER",
@@ -142,21 +132,15 @@ export const mockAuthService = {
       };
     }
 
-    // Check registered users
+    // Registered users
     const users = getRegisteredUsers();
     const user = users.find(
       (u) => u.username.toLowerCase() === username.toLowerCase()
     );
 
-    if (!user) {
-      throw new Error("Tài khoản không tồn tại");
-    }
+    if (!user) throw new Error("Tài khoản không tồn tại");
+    if (user.password !== password) throw new Error("Mật khẩu không chính xác");
 
-    if (user.password !== password) {
-      throw new Error("Mật khẩu không chính xác");
-    }
-
-    // Create token
     const token = createMockToken(user.username, user.email, user.role);
 
     return {
@@ -178,11 +162,7 @@ export const mockAuthService = {
     const user = users.find(
       (u) => u.username.toLowerCase() === username.toLowerCase()
     );
-
-    if (!user) {
-      throw new Error("Người dùng không tồn tại");
-    }
-
+    if (!user) throw new Error("Người dùng không tồn tại");
     return {
       id: user.id,
       username: user.username,
@@ -196,9 +176,7 @@ export const mockAuthService = {
   checkUsernameExists: async (username) => {
     await delay(200);
     const users = getRegisteredUsers();
-    return users.some(
-      (u) => u.username.toLowerCase() === username.toLowerCase()
-    );
+    return users.some((u) => u.username.toLowerCase() === username.toLowerCase());
   },
 
   // Check if email exists

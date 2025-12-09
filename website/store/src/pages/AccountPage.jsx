@@ -8,7 +8,7 @@ export default function AccountPage() {
   const navigate = useNavigate();
   const { section } = useParams();
   const { user, isAuthenticated, isLoading, logout } = useAuth();
-  const { addToCart } = useCart();
+  const { addToCart, resetCartAfterLogout } = useCart();
 
   const { orders, getOrder, getOrdersByStatus, totalOrders, cancelOrder } = useOrders();
   const { wishlist, removeFromWishlist: removeFromWishlistContext, totalWishlistItems } = useWishlist();
@@ -316,9 +316,11 @@ export default function AccountPage() {
   };
 
   const handleLogout = () => {
-    logout();
+    logout();               // xoá token, user trên FE
+    resetCartAfterLogout(); // chỉ reset state FE, DB giữ nguyên
     navigate('/home');
   };
+
 
   const getStatusClass = (status) => {
     switch (status) {
@@ -640,63 +642,63 @@ export default function AccountPage() {
     </div>
   );
 
- const renderAddresses = () => (
-  <div className="addresses-section">
-    <div className="section-title">
-      <h2>Sổ địa chỉ</h2>
-      <button className="add-new-btn" onClick={() => openAddressModal()}>
-        + Thêm địa chỉ mới
-      </button>
-    </div>
+  const renderAddresses = () => (
+    <div className="addresses-section">
+      <div className="section-title">
+        <h2>Sổ địa chỉ</h2>
+        <button className="add-new-btn" onClick={() => openAddressModal()}>
+          + Thêm địa chỉ mới
+        </button>
+      </div>
 
-    {addresses.length > 0 ? (
-      <div className="address-list">
-        {addresses.map((address) => (
-          <div
-            key={address.id}
-            className={`address-item ${address.isDefault ? "is-default" : ""}`}
-          >
-            <div className="address-header-row">
-              <div className="address-recipient">
-                <h4>{address.recipientName}</h4>
-                {address.isDefault && <span className="default-tag">Mặc định</span>}
+      {addresses.length > 0 ? (
+        <div className="address-list">
+          {addresses.map((address) => (
+            <div
+              key={address.id}
+              className={`address-item ${address.isDefault ? "is-default" : ""}`}
+            >
+              <div className="address-header-row">
+                <div className="address-recipient">
+                  <h4>{address.recipientName}</h4>
+                  {address.isDefault && <span className="default-tag">Mặc định</span>}
+                </div>
+              </div>
+
+              <div className="address-content">
+                <p className="recipient-phone">{address.phoneNumber}</p>
+                <p className="recipient-address">
+                  {address.detailedAddress || address.address}
+                  {address.country ? `, ${address.country}` : ""}
+                </p>
+              </div>
+
+              <div className="address-action-buttons">
+                <button className="edit-btn" onClick={() => openAddressModal(address)}>
+                  Chỉnh sửa
+                </button>
+                <button className="delete-btn" onClick={() => handleDeleteAddress(address.id)}>
+                  Xóa
+                </button>
+                {!address.isDefault && (
+                  <button
+                    className="set-default-btn"
+                    onClick={() => handleSetDefaultAddress(address.id)}
+                  >
+                    Đặt làm mặc định
+                  </button>
+                )}
               </div>
             </div>
-
-            <div className="address-content">
-              <p className="recipient-phone">{address.phoneNumber}</p>
-              <p className="recipient-address">
-                {address.detailedAddress || address.address}
-                {address.country ? `, ${address.country}` : ""}
-              </p>
-            </div>
-
-            <div className="address-action-buttons">
-              <button className="edit-btn" onClick={() => openAddressModal(address)}>
-                Chỉnh sửa
-              </button>
-              <button className="delete-btn" onClick={() => handleDeleteAddress(address.id)}>
-                Xóa
-              </button>
-              {!address.isDefault && (
-                <button
-                  className="set-default-btn"
-                  onClick={() => handleSetDefaultAddress(address.id)}
-                >
-                  Đặt làm mặc định
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-    ) : (
-      <div className="empty-state">
-        <p>Bạn chưa có địa chỉ nào</p>
-      </div>
-    )}
-  </div>
-);
+          ))}
+        </div>
+      ) : (
+        <div className="empty-state">
+          <p>Bạn chưa có địa chỉ nào</p>
+        </div>
+      )}
+    </div>
+  );
 
 
   return (

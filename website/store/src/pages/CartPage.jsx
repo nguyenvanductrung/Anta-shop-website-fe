@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useCart } from '../contexts';
 import { Layout } from '../components';
@@ -6,9 +6,27 @@ import './CartPage.css';
 
 export default function CartPage() {
   const navigate = useNavigate();
-  const { items, totalItems, totalPrice, removeFromCart, updateQuantity, clearCart, refreshCart } = useCart();
+  const {
+    items,
+    totalItems,
+    totalPrice,
+    removeFromCart,
+    updateQuantity,
+    clearCart,
+    refreshCart,
+  } = useCart();
 
-  console.log('🔍 CartPage received:', { items, itemsLength: items.length, totalItems, totalPrice });
+  // ====== LOCAL QUANTITY STATE ======
+  const [localQuantities, setLocalQuantities] = useState({});
+
+  useEffect(() => {
+    const initial = {};
+    items.forEach((item) => {
+      initial[item.id] = item.quantity || 1;
+    });
+    setLocalQuantities(initial);
+  }, [items]);
+
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState(null);
   const [couponError, setCouponError] = useState('');
@@ -18,28 +36,51 @@ export default function CartPage() {
   const SHIPPING_METHODS = {
     standard: { name: 'Giao hàng tiêu chuẩn', price: 30000, time: '3-5 ngày' },
     express: { name: 'Giao hàng nhanh', price: 50000, time: '1-2 ngày' },
-    free: { name: 'Miễn phí', price: 0, time: '5-7 ngày' }
+    free: { name: 'Miễn phí', price: 0, time: '5-7 ngày' },
   };
 
   const FREE_SHIPPING_THRESHOLD = 999000;
 
   const VALID_COUPONS = {
-    'ANTA2024': { discount: 100000, type: 'fixed', description: 'Giảm 100.000₫' },
-    'SALE10': { discount: 10, type: 'percent', description: 'Giảm 10%' },
-    'NEWUSER': { discount: 50000, type: 'fixed', description: 'Giảm 50.000₫ cho khách hàng mới' },
-    'FREESHIP': { discount: 0, type: 'freeship', description: 'Miễn phí vận chuyển' }
+    ANTA2024: { discount: 100000, type: 'fixed', description: 'Giảm 100.000₫' },
+    SALE10: { discount: 10, type: 'percent', description: 'Giảm 10%' },
+    NEWUSER: { discount: 50000, type: 'fixed', description: 'Giảm 50.000₫ cho khách hàng mới' },
+    FREESHIP: { discount: 0, type: 'freeship', description: 'Miễn phí vận chuyển' },
   };
+
   useEffect(() => {
     refreshCart();
   }, [refreshCart]);
+
+  // ====== helper lấy quantity local ======
+  const getLocalQty = (item) => {
+    const val = localQuantities[item.id];
+    if (val === '' || val == null) return item.quantity || 1;
+    return Number(val);
+  };
+
+  // ====== tổng theo local quantity ======
+  const localTotalItems = useMemo(
+    () => items.reduce((sum, item) => sum + getLocalQty(item), 0),
+    [items, localQuantities]
+  );
+
+  const localTotalPrice = useMemo(
+    () =>
+      items.reduce((sum, item) => sum + (item.price || 0) * getLocalQty(item), 0),
+    [items, localQuantities]
+  );
+
+  // auto switch freeship theo localTotalPrice
   useEffect(() => {
-    if (totalPrice >= FREE_SHIPPING_THRESHOLD) {
+    if (localTotalPrice >= FREE_SHIPPING_THRESHOLD) {
       setShippingMethod('free');
-    } else if (shippingMethod === 'free' && totalPrice < FREE_SHIPPING_THRESHOLD) {
+    } else if (shippingMethod === 'free' && localTotalPrice < FREE_SHIPPING_THRESHOLD) {
       setShippingMethod('standard');
     }
-  }, [totalPrice, shippingMethod]);
+  }, [localTotalPrice, shippingMethod]);
 
+  // ========== COUPON ==========
   const handleApplyCoupon = () => {
     setCouponError('');
     const trimmedCode = couponCode.trim().toUpperCase();
@@ -52,7 +93,7 @@ export default function CartPage() {
     if (VALID_COUPONS[trimmedCode]) {
       setAppliedCoupon({
         code: trimmedCode,
-        ...VALID_COUPONS[trimmedCode]
+        ...VALID_COUPONS[trimmedCode],
       });
       setCouponError('');
     } else {
@@ -71,16 +112,16 @@ export default function CartPage() {
     if (!appliedCoupon) return 0;
 
     if (appliedCoupon.type === 'fixed') {
-      return Math.min(appliedCoupon.discount, totalPrice);
+      return Math.min(appliedCoupon.discount, localTotalPrice);
     } else if (appliedCoupon.type === 'percent') {
-      return Math.floor((totalPrice * appliedCoupon.discount) / 100);
+      return Math.floor((localTotalPrice * appliedCoupon.discount) / 100);
     }
     return 0;
   };
 
   const calculateShipping = () => {
     if (items.length === 0) return 0;
-    if (appliedCoupon?.type === 'freeship' || totalPrice >= FREE_SHIPPING_THRESHOLD) {
+    if (appliedCoupon?.type === 'freeship' || localTotalPrice >= FREE_SHIPPING_THRESHOLD) {
       return 0;
     }
     return SHIPPING_METHODS[shippingMethod]?.price || 0;
@@ -88,7 +129,7 @@ export default function CartPage() {
 
   const discount = calculateDiscount();
   const shipping = calculateShipping();
-  const finalTotal = Math.max(0, totalPrice - discount + shipping);
+  const finalTotal = Math.max(0, localTotalPrice - discount + shipping);
 
   const getItemKey = (item) => {
     return `${item.id}-${item.size || 'nosize'}-${item.color || 'nocolor'}`;
@@ -101,48 +142,77 @@ export default function CartPage() {
     return options;
   };
 
+  // ====== chỉ chỉnh local state ======
   const handleQuantityChange = (item, newQuantity) => {
-    const sanitizedQuantity = parseInt(newQuantity);
+    let qty = parseInt(newQuantity, 10);
 
-    if (isNaN(sanitizedQuantity) || sanitizedQuantity < 1) {
-      if (window.confirm('Bạn có muốn xóa sản phẩm này khỏi giỏ hàng?')) {
-        removeFromCart(item.id, getItemOptions(item));
-      }
-      return;
-    }
-
-    if (sanitizedQuantity > 99) {
+    if (isNaN(qty) || qty < 1) qty = 1;
+    if (qty > 99) {
       alert('Số lượng tối đa là 99');
-      return;
+      qty = 99;
     }
 
-    updateQuantity(item.id, sanitizedQuantity, getItemOptions(item));
+    setLocalQuantities((prev) => ({
+      ...prev,
+      [item.id]: qty,
+    }));
   };
 
   const handleQuantityInput = (item, value) => {
     const sanitizedValue = value.replace(/[^0-9]/g, '');
 
     if (sanitizedValue === '') {
-      updateQuantity(item.id, 0, getItemOptions(item));
+      setLocalQuantities((prev) => ({
+        ...prev,
+        [item.id]: '',
+      }));
       return;
     }
 
-    const numValue = parseInt(sanitizedValue);
+    let numValue = parseInt(sanitizedValue, 10);
     if (numValue > 99) {
-      updateQuantity(item.id, 99, getItemOptions(item));
       alert('Số lượng tối đa là 99');
-    } else {
-      updateQuantity(item.id, numValue, getItemOptions(item));
+      numValue = 99;
     }
+
+    setLocalQuantities((prev) => ({
+      ...prev,
+      [item.id]: numValue,
+    }));
   };
 
   const handleQuantityBlur = (item) => {
-    if (item.quantity < 1) {
-      if (window.confirm('Bạn có muốn xóa sản phẩm này khỏi giỏ hàng?')) {
-        removeFromCart(item.id, getItemOptions(item));
-      } else {
-        updateQuantity(item.id, 1, getItemOptions(item));
+    const current = localQuantities[item.id];
+    if (!current || Number.isNaN(Number(current)) || current < 1) {
+      setLocalQuantities((prev) => ({
+        ...prev,
+        [item.id]: 1,
+      }));
+    }
+  };
+
+  // ====== nút "Cập nhật giỏ hàng" mới gọi API ======
+  const handleUpdateCartClick = async () => {
+    try {
+      const promises = [];
+
+      items.forEach((item) => {
+        const newQty = getLocalQty(item);
+        if (newQty !== item.quantity) {
+          // updateQuantity trong context: (cartItemId, quantity, options)
+          promises.push(updateQuantity(item.id, newQty, getItemOptions(item)));
+        }
+      });
+
+      if (promises.length) {
+        await Promise.all(promises);
+        await refreshCart();
       }
+
+      alert('Giỏ hàng đã được cập nhật');
+    } catch (e) {
+      console.error(e);
+      alert('Có lỗi xảy ra khi cập nhật giỏ hàng');
     }
   };
 
@@ -153,16 +223,19 @@ export default function CartPage() {
     }
 
     const orderData = {
-      items,
+      items: items.map((item) => ({
+        ...item,
+        quantity: getLocalQty(item),
+      })),
       coupon: appliedCoupon,
       notes: orderNotes,
       shipping: shippingMethod,
       totals: {
-        subtotal: totalPrice,
+        subtotal: localTotalPrice,
         discount,
         shipping,
-        total: finalTotal
-      }
+        total: finalTotal,
+      },
     };
 
     localStorage.setItem('checkout_data', JSON.stringify(orderData));
@@ -175,28 +248,34 @@ export default function CartPage() {
       setAppliedCoupon(null);
       setCouponCode('');
       setOrderNotes('');
+      setLocalQuantities({});
     }
   };
 
   return (
     <Layout>
       <div className="cart-page">
-
+        {/* Breadcrumb */}
         <div className="breadcrumbs">
           <div className="container">
-            <Link to="/home" className="breadcrumb-link">Trang chủ</Link>
+            <Link to="/home" className="breadcrumb-link">
+              Trang chủ
+            </Link>
             <span className="breadcrumb-separator">/</span>
             <span className="breadcrumb-current">Giỏ hàng</span>
           </div>
         </div>
 
-        {totalPrice > 0 && totalPrice < FREE_SHIPPING_THRESHOLD && (
+        {/* Banner freeship */}
+        {localTotalPrice > 0 && localTotalPrice < FREE_SHIPPING_THRESHOLD && (
           <div className="promo-banner">
             <div className="container">
               <div className="promo-content">
                 <span className="promo-icon">🚚</span>
                 <span className="promo-text">Mua thêm</span>
-                <span className="promo-amount">{(FREE_SHIPPING_THRESHOLD - totalPrice).toLocaleString()}₫</span>
+                <span className="promo-amount">
+                  {(FREE_SHIPPING_THRESHOLD - localTotalPrice).toLocaleString()}₫
+                </span>
                 <span className="promo-text">để được</span>
                 <span className="promo-highlight">MIỄN PHÍ VẬN CHUYỂN</span>
               </div>
@@ -204,7 +283,7 @@ export default function CartPage() {
           </div>
         )}
 
-        {totalPrice >= FREE_SHIPPING_THRESHOLD && items.length > 0 && (
+        {localTotalPrice >= FREE_SHIPPING_THRESHOLD && items.length > 0 && (
           <div className="promo-banner success">
             <div className="container">
               <div className="promo-content">
@@ -219,6 +298,7 @@ export default function CartPage() {
         <div className="cart-content">
           <div className="container">
             {items.length === 0 ? (
+              // ================== GIỎ HÀNG TRỐNG ==================
               <div className="empty-cart">
                 <div className="empty-cart-illustration">
                   <div className="cart-basket">
@@ -248,15 +328,14 @@ export default function CartPage() {
                 </button>
               </div>
             ) : (
+              // ================== CÓ SẢN PHẨM ==================
               <div className="cart-layout">
+                {/* MAIN LIST */}
                 <div className="cart-main">
                   <div className="cart-header">
                     <h1>Giỏ hàng của bạn</h1>
-                    <span className="cart-count">({totalItems} sản phẩm)</span>
-                    <button
-                      className="clear-cart-btn"
-                      onClick={handleClearCart}
-                    >
+                    <span className="cart-count">({localTotalItems} sản phẩm)</span>
+                    <button className="clear-cart-btn" onClick={handleClearCart}>
                       <span className="icon">🗑️</span>
                       <span className="btn-text">Xóa tất cả</span>
                     </button>
@@ -279,7 +358,8 @@ export default function CartPage() {
                               src={item.image || 'https://via.placeholder.com/100x100'}
                               alt={item.name}
                               onError={(e) => {
-                                e.target.src = 'https://via.placeholder.com/100x100?text=No+Image';
+                                e.target.src =
+                                  'https://via.placeholder.com/100x100?text=No+Image';
                               }}
                             />
                           </div>
@@ -287,15 +367,18 @@ export default function CartPage() {
                             <h3 className="item-name">{item.name}</h3>
                             {item.size && <p className="item-variant">Size: {item.size}</p>}
                             {item.color && <p className="item-variant">Màu: {item.color}</p>}
-                            {item.sku && <p className="item-sku">SKU: {item.sku}</p>}
                           </div>
                         </div>
 
                         <div className="col-price">
                           <div className="item-price">
-                            <span className="current-price">{(item.price || 0).toLocaleString()}₫</span>
+                            <span className="current-price">
+                              {(item.price || 0).toLocaleString()}₫
+                            </span>
                             {item.originalPrice && item.originalPrice > item.price && (
-                              <span className="original-price">{item.originalPrice.toLocaleString()}₫</span>
+                              <span className="original-price">
+                                {item.originalPrice.toLocaleString()}₫
+                              </span>
                             )}
                           </div>
                         </div>
@@ -304,28 +387,28 @@ export default function CartPage() {
                           <div className="quantity-controls">
                             <button
                               className="qty-btn decrease"
-                              onClick={() => handleQuantityChange(item, item.quantity - 1)}
-                              aria-label="Giảm số lượng"
+                              onClick={() =>
+                                handleQuantityChange(item, getLocalQty(item) - 1)
+                              }
                               type="button"
                             >
                               −
                             </button>
+
                             <input
                               type="text"
-                              inputMode="numeric"
-                              pattern="[0-9]*"
                               className="qty-input"
-                              value={item.quantity}
+                              style={{ width: '200px' }}
+                              value={localQuantities[item.id] ?? item.quantity}
                               onChange={(e) => handleQuantityInput(item, e.target.value)}
                               onBlur={() => handleQuantityBlur(item)}
-                              min="1"
-                              max="99"
-                              aria-label="Số lượng"
                             />
+
                             <button
                               className="qty-btn increase"
-                              onClick={() => handleQuantityChange(item, item.quantity + 1)}
-                              aria-label="Tăng số lượng"
+                              onClick={() =>
+                                handleQuantityChange(item, getLocalQty(item) + 1)
+                              }
                               type="button"
                             >
                               +
@@ -335,7 +418,7 @@ export default function CartPage() {
 
                         <div className="col-total">
                           <span className="total-price">
-                            {((item.price || 0) * item.quantity).toLocaleString()}₫
+                            {((item.price || 0) * getLocalQty(item)).toLocaleString()}₫
                           </span>
                         </div>
 
@@ -368,9 +451,7 @@ export default function CartPage() {
 
                     <button
                       className="update-cart-btn"
-                      onClick={() => {
-                        alert('Giỏ hàng đã được cập nhật');
-                      }}
+                      onClick={handleUpdateCartClick}
                       type="button"
                     >
                       Cập nhật giỏ hàng
@@ -378,7 +459,9 @@ export default function CartPage() {
                   </div>
                 </div>
 
+                {/* ============ SIDEBAR: MÃ GIẢM GIÁ + PHÍ SHIP + TỔNG TIỀN ============ */}
                 <div className="cart-sidebar">
+                  {/* Coupon */}
                   <div className="coupon-section">
                     <h3 className="section-title">Mã giảm giá</h3>
 
@@ -388,7 +471,9 @@ export default function CartPage() {
                           <span className="coupon-icon">🎟️</span>
                           <div className="coupon-details">
                             <span className="coupon-code">{appliedCoupon.code}</span>
-                            <span className="coupon-description">{appliedCoupon.description}</span>
+                            <span className="coupon-description">
+                              {appliedCoupon.description}
+                            </span>
                           </div>
                         </div>
                         <button
@@ -428,9 +513,7 @@ export default function CartPage() {
                       </div>
                     )}
 
-                    {couponError && (
-                      <p className="coupon-error">{couponError}</p>
-                    )}
+                    {couponError && <p className="coupon-error">{couponError}</p>}
 
                     <div className="available-coupons">
                       <p className="available-coupons-title">Mã khả dụng:</p>
@@ -452,7 +535,8 @@ export default function CartPage() {
                     </div>
                   </div>
 
-                  {totalPrice < FREE_SHIPPING_THRESHOLD && (
+                  {/* Shipping method (ẩn khi đủ freeship) */}
+                  {localTotalPrice < FREE_SHIPPING_THRESHOLD && (
                     <div className="shipping-section">
                       <h3 className="section-title">Phương thức vận chuyển</h3>
                       <div className="shipping-options">
@@ -472,7 +556,9 @@ export default function CartPage() {
                                 <span className="shipping-time">({method.time})</span>
                               </div>
                               <span className="shipping-price">
-                                {method.price === 0 ? 'Miễn phí' : `${method.price.toLocaleString()}₫`}
+                                {method.price === 0
+                                  ? 'Miễn phí'
+                                  : `${method.price.toLocaleString()}₫`}
                               </span>
                             </label>
                           );
@@ -481,6 +567,7 @@ export default function CartPage() {
                     </div>
                   )}
 
+                  {/* Notes */}
                   <div className="notes-section">
                     <h3 className="section-title">Ghi chú đơn hàng</h3>
                     <textarea
@@ -494,19 +581,24 @@ export default function CartPage() {
                     <span className="notes-counter">{orderNotes.length}/500</span>
                   </div>
 
+                  {/* Order summary */}
                   <div className="order-summary">
                     <h3 className="section-title">Tổng đơn hàng</h3>
 
                     <div className="summary-content">
                       <div className="summary-row">
-                        <span>Tạm tính ({totalItems} sản phẩm):</span>
-                        <span className="summary-value">{totalPrice.toLocaleString()}₫</span>
+                        <span>Tạm tính ({localTotalItems} sản phẩm):</span>
+                        <span className="summary-value">
+                          {localTotalPrice.toLocaleString()}₫
+                        </span>
                       </div>
 
                       {discount > 0 && (
                         <div className="summary-row discount">
                           <span>Giảm giá:</span>
-                          <span className="summary-value discount-value">-{discount.toLocaleString()}₫</span>
+                          <span className="summary-value discount-value">
+                            -{discount.toLocaleString()}₫
+                          </span>
                         </div>
                       )}
 
@@ -525,7 +617,9 @@ export default function CartPage() {
 
                       <div className="summary-row total">
                         <span>Tổng cộng:</span>
-                        <span className="summary-value total-value">{finalTotal.toLocaleString()}₫</span>
+                        <span className="summary-value total-value">
+                          {finalTotal.toLocaleString()}₫
+                        </span>
                       </div>
 
                       <p className="tax-note">(Đã bao gồm VAT nếu có)</p>
@@ -550,11 +644,11 @@ export default function CartPage() {
                     </div>
                   </div>
                 </div>
+                {/* END SIDEBAR */}
               </div>
             )}
           </div>
         </div>
-
       </div>
     </Layout>
   );

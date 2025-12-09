@@ -1,4 +1,4 @@
-//src/contexts/AuthContext.jsx
+// src/contexts/AuthContext.jsx
 import React, {
   createContext,
   useContext,
@@ -77,7 +77,7 @@ export const AuthProvider = ({ children }) => {
     delete api.defaults.headers.common["Authorization"];
   };
 
-  const login = (access, refresh) => {
+  const login = (access, refresh, userData) => {
     if (!access) {
       xoaTatCa();
       return;
@@ -85,31 +85,28 @@ export const AuthProvider = ({ children }) => {
 
     luuToken(access, refresh);
 
+    // Ưu tiên lấy user từ response BE
+    if (userData) {
+      setUser(userData);
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(userData));
+      setIsAdmin(userData.role === "ADMIN");
+      return;
+    }
+
+    // Nếu không có userData thì fallback decode token
     const decoded = decodeJwt(access);
     if (decoded) {
       const userId =
-        decoded.id ||
-        decoded.userId ||
-        decoded.user_id ||
-        decoded.sub ||
-        null;
-
-      const role = String(decoded.role || decoded.roles || "USER").toUpperCase();
+        decoded.id || decoded.userId || decoded.user_id || null;
+      const role = String(decoded.role || "USER").toUpperCase();
       const u = {
         id: Number(userId),
-        username: decoded.sub || decoded.username || decoded.name || "",
+        username: decoded.username || decoded.sub || "",
         role,
         email: decoded.email || "",
-        phoneNumber: decoded.phoneNumber || decoded.phone || "",
       };
-
-      try {
-        localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(u));
-      } catch (e) {
-        console.warn("Không lưu được thông tin user vào localStorage", e);
-      }
-
       setUser(u);
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(u));
       setIsAdmin(role === "ADMIN");
     } else {
       setUser(null);
@@ -174,13 +171,8 @@ export const AuthProvider = ({ children }) => {
         const decoded = decodeJwt(accessToken);
         if (decoded) {
           const userId =
-            decoded.id ||
-            decoded.userId ||
-            decoded.user_id ||
-            decoded.sub ||
-            null;
-
-          const role = String(decoded.role || decoded.roles || "USER").toUpperCase();
+            decoded.id || decoded.userId || decoded.user_id || null;
+          const role = String(decoded.role || "USER").toUpperCase();
           const u = {
             id: Number(userId),
             username: decoded.sub || decoded.username || decoded.name || "",
@@ -188,7 +180,6 @@ export const AuthProvider = ({ children }) => {
             email: decoded.email || "",
             phoneNumber: decoded.phoneNumber || decoded.phone || "",
           };
-
           setUser(u);
           setIsAdmin(role === "ADMIN");
           localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(u));
@@ -216,8 +207,7 @@ export const AuthProvider = ({ children }) => {
       {children}
     </AuthContext.Provider>
   );
-}; 
-
+};
 
 // Hook tiện dụng
 export const useAuth = () => {

@@ -5,11 +5,13 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts';
 import { Header as Headers, Footer, FloatingButtons } from '../components';
 import { authService } from '../services/api';
+import { useCart } from '../contexts';
 import './AuthPage.css';
 import axios from "axios";
 export default function Login() {
   const navigate = useNavigate();
   const { login, isAdmin } = useAuth();
+  const { refreshCart, mergeGuestToUser } = useCart();
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -93,7 +95,13 @@ export default function Login() {
 
       // lưu token qua context (login) và localStorage (login implementation của bạn xử lý)
       login(accessToken, refreshToken);
-
+      
+      try {
+        await mergeGuestToUser();   // 👈 gọi BE /api/cart/merge
+        await refreshCart();        // 👈 load lại giỏ theo userId
+      } catch (e) {
+        console.error('Merge / refresh cart after login error:', e);
+      }
       // cố gắng decode token để lấy role nếu backend chưa trả role trực tiếp
       let userRole = role;
       try {

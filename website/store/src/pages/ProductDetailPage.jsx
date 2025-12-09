@@ -165,20 +165,19 @@ export default function ProductDetailPage() {
       if (allSizes.length && !selectedSize) return alert("Vui lòng chọn kích thước");
       if (allColors.length && !selectedColor) return alert("Vui lòng chọn màu sắc");
     }
-    addToCart({
-      id: Number(id),
-      name: prod?.name || "Sản phẩm",
-      price: currentPrice,
-      image: prod?.images?.[0] || prod?.thumbnail || placeholder,
-      size: selectedSize || undefined,
-      color: selectedColor || undefined,
-      quantity: quantity,
-      variantId: activeVariant?.id,
-      sku:
-        activeVariant?.sku ||
-        prod?.sku ||
-        (variants.length ? variants[0]?.sku : undefined),
-    });
+    addToCart(
+      {
+        id: Number(id),
+        name: prod?.name || "Sản phẩm",
+        price: currentPrice,
+        image: prod?.images?.[0] || prod?.thumbnail || placeholder,
+        size: selectedSize || undefined,
+        color: selectedColor || undefined,
+        variantId: activeVariant?.id,
+        sku: activeVariant?.sku || prod?.sku || (variants.length ? variants[0]?.sku : undefined),
+      },
+      quantity // ✅ truyền quantity vào tham số thứ hai
+    );
     alert("Đã thêm sản phẩm vào giỏ hàng!");
   };
 
