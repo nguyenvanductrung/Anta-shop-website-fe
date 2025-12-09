@@ -1,30 +1,41 @@
-// Simulated MoMo Payment Service
-// This simulates the MoMo payment flow for demo/testing purposes
+// src/services/momoPaymentService.js
+// Unified MoMo payment service for frontend
+// - If VITE_MOMO_SIMULATION === 'true' -> use local simulation (your existing logic)
+// - Otherwise -> call backend endpoints (payment-service) via api instance
 
-const SIMULATION_CONFIG = {
-  qrScanDelay: 3000, // Time to simulate QR code scanning (3 seconds)
-  paymentProcessDelay: 2000, // Time to process payment (2 seconds)
-  successRate: 0.98, // 98% success rate for simulation
-};
+import { api } from "./api";
 
-class MoMoPaymentService {
+/**
+ * ENV switches:
+ * - import.meta.env.VITE_MOMO_SIMULATION === 'true'  -> use local simulation (dev)
+ * - otherwise calls backend /api/payments/create and /api/payments/status/:requestId
+ *
+ * NOTE: If you import momoPaymentService from ../services (index.js), ensure index exports it:
+ *   export { momoPaymentService } from './momoPaymentService';
+ */
+
+// -------------------- SIMULATION CLASS (adapted from your file) --------------------
+class SimulatedMoMoPaymentService {
   constructor() {
     this.pendingPayments = new Map();
     this.completedPayments = new Map();
+    this.SIMULATION_CONFIG = {
+      qrScanDelay: 3000,
+      paymentProcessDelay: 2000,
+      successRate: 0.98,
+    };
   }
 
-  // Generate a realistic MoMo transaction ID
   generateTransactionId() {
     const timestamp = Date.now();
     const random = Math.floor(Math.random() * 1000000);
     return `MOMO${timestamp}${random}`.slice(0, 20);
   }
 
-  // Create a payment request
   createPaymentRequest(orderData) {
     const { total, orderNumber } = orderData;
     const transactionId = this.generateTransactionId();
-    
+
     const paymentRequest = {
       transactionId,
       orderNumber,
@@ -35,14 +46,13 @@ class MoMoPaymentService {
     };
 
     this.pendingPayments.set(transactionId, paymentRequest);
-    
+
     return {
       success: true,
       data: paymentRequest,
     };
   }
 
-  // Generate QR code data (simulated)
   generateQRCodeData(transactionId, amount, orderNumber) {
     return {
       transactionId,
@@ -51,77 +61,56 @@ class MoMoPaymentService {
       amount,
       note: `ANTA ${orderNumber}`,
       bankCode: 'MOMO',
+      // qrContent shape is simulated; real provider expects specific format
       qrContent: `2|99|0974945488|ANTA VIETNAM|${amount}|ANTA ${orderNumber}|0|0|${amount}`,
+      // convenience: a simple visually-scannable payload for QR generation
     };
   }
 
-  // Simulate QR code being scanned
   simulateQRScan(transactionId, onProgress) {
     return new Promise((resolve) => {
       const payment = this.pendingPayments.get(transactionId);
-      
+
       if (!payment) {
-        resolve({
-          success: false,
-          error: 'Payment request not found',
-        });
+        resolve({ success: false, error: 'Payment request not found' });
         return;
       }
 
-      // Simulate scanning process
-      if (onProgress) {
-        onProgress({ status: 'scanning', message: 'Đang quét mã QR...' });
-      }
+      if (onProgress) onProgress({ status: 'scanning', message: 'Đang quét mã QR...' });
 
       setTimeout(() => {
-        if (onProgress) {
-          onProgress({ status: 'detected', message: 'Đã phát hiện mã QR' });
-        }
-
-        // Simulate opening MoMo app
+        if (onProgress) onProgress({ status: 'detected', message: 'Đã phát hiện mã QR' });
         setTimeout(() => {
-          if (onProgress) {
-            onProgress({ status: 'opening_app', message: 'Đang mở ứng dụng MoMo...' });
-          }
-
+          if (onProgress) onProgress({ status: 'opening_app', message: 'Đang mở ứng dụng MoMo...' });
           resolve({ success: true });
         }, 1000);
-      }, SIMULATION_CONFIG.qrScanDelay);
+      }, this.SIMULATION_CONFIG.qrScanDelay);
     });
   }
 
-  // Simulate payment processing
-  async processPayment(transactionId, onProgress) {
+  processPayment(transactionId, onProgress) {
     return new Promise((resolve) => {
       const payment = this.pendingPayments.get(transactionId);
-      
+
       if (!payment) {
-        resolve({
-          success: false,
-          error: 'Payment request not found',
-        });
+        resolve({ success: false, error: 'Payment request not found' });
         return;
       }
 
-      if (onProgress) {
-        onProgress({ status: 'processing', message: 'Đang xử lý thanh toán...' });
-      }
+      if (onProgress) onProgress({ status: 'processing', message: 'Đang xử lý thanh toán...' });
 
       setTimeout(() => {
-        // Simulate success/failure based on success rate
-        const isSuccess = Math.random() < SIMULATION_CONFIG.successRate;
+        const isSuccess = Math.random() < this.SIMULATION_CONFIG.successRate;
 
         if (isSuccess) {
           payment.status = 'completed';
           payment.completedAt = new Date().toISOString();
           payment.momoTransactionId = `MT${Date.now()}`;
-          
+
           this.completedPayments.set(transactionId, payment);
           this.pendingPayments.delete(transactionId);
 
-          if (onProgress) {
-            onProgress({ status: 'success', message: 'Thanh toán thành công!' });
-          }
+          if (onProgress) onProgress({ status: 'success', message: 'Thanh toán thành công!' });
 
           resolve({
             success: true,
@@ -137,87 +126,108 @@ class MoMoPaymentService {
           payment.failedAt = new Date().toISOString();
           payment.errorMessage = 'Số dư không đủ';
 
-          if (onProgress) {
-            onProgress({ status: 'failed', message: 'Thanh toán thất bại. Vui lòng thử lại.' });
-          }
+          if (onProgress) onProgress({ status: 'failed', message: 'Thanh toán thất bại. Vui lòng thử lại.' });
 
-          resolve({
-            success: false,
-            error: 'Số dư không đủ hoặc giao dịch bị từ chối',
-          });
+          resolve({ success: false, error: 'Số dư không đủ hoặc giao dịch bị từ chối' });
         }
-      }, SIMULATION_CONFIG.paymentProcessDelay);
+      }, this.SIMULATION_CONFIG.paymentProcessDelay);
     });
   }
 
-  // Auto-process payment (simulates user completing payment on their phone)
   async autoProcessPayment(transactionId, onProgress) {
-    // First simulate QR scan
     const scanResult = await this.simulateQRScan(transactionId, onProgress);
-    
-    if (!scanResult.success) {
-      return scanResult;
-    }
-
-    // Then simulate payment processing
+    if (!scanResult.success) return scanResult;
     return await this.processPayment(transactionId, onProgress);
   }
 
-  // Check payment status
   checkPaymentStatus(transactionId) {
     const pending = this.pendingPayments.get(transactionId);
     const completed = this.completedPayments.get(transactionId);
-    
-    if (completed) {
-      return {
-        success: true,
-        status: 'completed',
-        data: completed,
-      };
-    }
-    
-    if (pending) {
-      return {
-        success: true,
-        status: pending.status,
-        data: pending,
-      };
-    }
-    
-    return {
-      success: false,
-      status: 'not_found',
-      error: 'Payment not found',
-    };
+
+    if (completed) return { success: true, status: 'completed', data: completed };
+    if (pending) return { success: true, status: pending.status, data: pending };
+    return { success: false, status: 'not_found', error: 'Payment not found' };
   }
 
-  // Cancel payment
   cancelPayment(transactionId) {
     const payment = this.pendingPayments.get(transactionId);
-    
     if (payment) {
       payment.status = 'cancelled';
       payment.cancelledAt = new Date().toISOString();
       this.pendingPayments.delete(transactionId);
-      
-      return {
-        success: true,
-        message: 'Payment cancelled',
-      };
+      return { success: true, message: 'Payment cancelled' };
     }
-    
-    return {
-      success: false,
-      error: 'Payment not found or already completed',
-    };
+    return { success: false, error: 'Payment not found or already completed' };
   }
 
-  // Get payment details
   getPaymentDetails(transactionId) {
     return this.checkPaymentStatus(transactionId);
   }
 }
 
-// Export singleton instance
-export const momoPaymentService = new MoMoPaymentService();
+// -------------------- REAL (backend-backed) SERVICE --------------------
+class BackendMoMoPaymentService {
+  constructor() {
+    this.createEndpoint = "/api/payments/create";
+    this.statusEndpoint = (requestId) => `/api/payments/status/${encodeURIComponent(requestId)}`;
+  }
+
+  // orderData shape should match backend expectation:
+  // { orderId, userId, amount, items, customer, orderNumber, ... }
+  async createPaymentRequest(orderData) {
+    try {
+      const res = await api.post(this.createEndpoint, orderData);
+      // backend returns MomoFrontendResponse as described in backend changes
+      return { success: true, data: res.data };
+    } catch (err) {
+      return { success: false, error: err?.response?.data || err?.message || String(err) };
+    }
+  }
+
+  async getPaymentStatus(requestId) {
+    try {
+      const res = await api.get(this.statusEndpoint(requestId));
+      return { success: true, data: res.data };
+    } catch (err) {
+      return { success: false, error: err?.response?.data || err?.message || String(err) };
+    }
+  }
+
+  async autoProcessPayment(requestId, onProgress, opts = { interval: 3000, timeout: 120000 }) {
+    const start = Date.now();
+    while (Date.now() - start < opts.timeout) {
+      if (onProgress) onProgress({ status: "polling" });
+      const st = await this.getPaymentStatus(requestId);
+      if (st.success && st.data) {
+        const s = String(st.data.status || "").toUpperCase();
+        if (s === "SUCCESS" || s === "PAID" || s === "COMPLETED") {
+          if (onProgress) onProgress({ status: "success", message: "Thanh toán thành công (backend)" });
+          return { success: true, data: st.data };
+        }
+        if (s === "FAILED") {
+          if (onProgress) onProgress({ status: "failed", message: "Thanh toán thất bại (backend)" });
+          return { success: false, error: "Payment failed" };
+        }
+      }
+      await new Promise(r => setTimeout(r, opts.interval));
+    }
+    return { success: false, error: "Timeout waiting for payment" };
+  }
+
+  // convenience wrappers
+  async cancelPayment(requestId) {
+    // not implemented on backend by default; you can call a cancel endpoint if exists
+    return { success: false, error: "Cancel not supported" };
+  }
+
+  getPaymentDetails(requestId) {
+    return this.getPaymentStatus(requestId);
+  }
+}
+
+// -------------------- EXPORT SINGLETON (choose impl by ENV) --------------------
+const USE_SIM = String(import.meta.env.VITE_MOMO_SIMULATION || "").toLowerCase() === "true";
+
+export const momoPaymentService = USE_SIM ? new SimulatedMoMoPaymentService() : new BackendMoMoPaymentService();
+
 export default momoPaymentService;

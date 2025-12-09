@@ -18,53 +18,97 @@ export default function OrderSuccessPage() {
 
   useEffect(() => {
     // Try to get order data from location state first
-    let data = location.state?.orderData;
+    let raw = location.state?.orderData;
 
     // If not in state, try to get the latest order from localStorage
-    if (!data) {
+    if (!raw) {
       try {
         const userOrders = JSON.parse(localStorage.getItem(STORAGE_KEYS.USER_ORDERS) || '[]');
         if (userOrders.length > 0) {
-          // Get the most recent order (last item in array)
-          data = userOrders[userOrders.length - 1];
-
-          // Convert user order format to orderData format if needed
-          if (!data.customer && data.orderNumber) {
-            data = {
-              orderNumber: data.orderNumber,
-              orderDate: data.date || data.createdAt,
-              items: data.products || [],
-              total: data.total || data.totalAmount,
-              subtotal: data.subtotal || data.total,
-              discount: data.discount || 0,
-              shipping: data.shipping || 0,
-              promoCode: data.promoCode || '',
-              customer: {
-                fullName: data.customer || 'Khách hàng',
-                phone: data.phone || '',
-                email: data.email || '',
-                address: data.address || '',
-                paymentMethod: data.paymentMethod || 'cod'
-              }
-            };
-          }
+          // Most recent order: assuming newest at index 0 (or last depending on how you saved)
+          raw = userOrders[0] ?? userOrders[userOrders.length - 1];
         }
       } catch (error) {
         console.error('Error loading order from localStorage:', error);
+        raw = null;
       }
     }
 
-    if (data) {
-      setOrderData(data);
-      setPaymentConfirmed(location.state?.paymentConfirmed || false);
-      refreshOrders();
-      setShowAnimation(true);
+    if (!raw) {
+      // nothing to do
+      return;
+    }
 
-      // Show success toast only once
+    // Normalize order object to a stable shape
+    try {
+      const normalized = {
+        orderNumber: raw.orderNumber || raw.id || `ANT${Date.now().toString().slice(-8)}`,
+        orderDate: raw.orderDate || raw.date || raw.createdAt || new Date().toISOString(),
+        // ensure items is an array (try multiple possible keys)
+        items: Array.isArray(raw.items)
+          ? raw.items
+          : Array.isArray(raw.products)
+            ? raw.products
+            : Array.isArray(raw.itemsOrdered)
+              ? raw.itemsOrdered
+              : [],
+        // numeric fields
+        subtotal: Number(raw.subtotal ?? raw.total ?? raw.totalAmount ?? 0),
+        discount: Number(raw.discount ?? 0),
+        shipping: Number(raw.shipping ?? 0),
+        total: Number(raw.total ?? raw.totalAmount ?? raw.subtotal ?? 0),
+        promoCode: raw.promoCode ?? raw.promo ?? '',
+        // customer object normalization
+        customer: {
+          fullName:
+            (raw.customer && (raw.customer.fullName || raw.customer.name)) ||
+            raw.customer ||
+            raw.customerName ||
+            raw.customer_fullName ||
+            'Khách hàng',
+          phone:
+            (raw.customer && (raw.customer.phone || raw.customer.phoneNumber)) ||
+            raw.phone ||
+            raw.customerPhone ||
+            '',
+          email:
+            (raw.customer && raw.customer.email) ||
+            raw.email ||
+            '',
+          address:
+            (raw.customer && (raw.customer.address || raw.customer.detailedAddress)) ||
+            raw.address ||
+            raw.shippingAddress ||
+            '',
+          ward: (raw.customer && raw.customer.ward) || raw.ward || '',
+          district: (raw.customer && raw.customer.district) || raw.district || '',
+          city: (raw.customer && raw.customer.city) || raw.city || '',
+          note: (raw.customer && raw.customer.note) || raw.note || ''
+        },
+        // keep raw for debug if needed
+        raw
+      };
+
+      // If subtotal is zero but items available, compute subtotal from items
+      if ((!normalized.subtotal || normalized.subtotal === 0) && normalized.items.length > 0) {
+        normalized.subtotal = normalized.items.reduce((s, it) => s + (Number(it.price || it.unitPrice || it.amount || 0) * Number(it.quantity || it.qty || 1)), 0);
+      }
+      // If total is zero compute from subtotal-discount+shipping
+      if ((!normalized.total || normalized.total === 0)) {
+        normalized.total = Math.max(0, normalized.subtotal - (normalized.discount || 0) + (normalized.shipping || 0));
+      }
+
+      setOrderData(normalized);
+      setPaymentConfirmed(Boolean(location.state?.paymentConfirmed || raw.paymentConfirmed || false));
+      refreshOrders?.();
+
+      setShowAnimation(true);
       if (!hasShownToast.current) {
-        showSuccess('Đặt hàng thành công!');
+        showSuccess && showSuccess('Đặt hàng thành công!');
         hasShownToast.current = true;
       }
+    } catch (err) {
+      console.error('Error normalizing order data', err);
     }
   }, [location.state, refreshOrders, showSuccess]);
 
@@ -130,8 +174,8 @@ export default function OrderSuccessPage() {
           <div className={`success-hero ${showAnimation ? 'animate' : ''}`}>
             <div className="success-icon-wrapper">
               <svg className="success-icon" viewBox="0 0 52 52">
-                <circle className="success-circle" cx="26" cy="26" r="25" fill="none"/>
-                <path className="success-check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
+                <circle className="success-circle" cx="26" cy="26" r="25" fill="none" />
+                <path className="success-check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8" />
               </svg>
             </div>
             <h1 className="success-title">Đặt hàng thành công!</h1>
@@ -225,8 +269,8 @@ export default function OrderSuccessPage() {
                     {orderData.items.map((item, index) => (
                       <div key={index} className="product-item">
                         <div className="product-image-wrapper">
-                          <img 
-                            src={item.image || 'https://via.placeholder.com/100'} 
+                          <img
+                            src={item.image || 'https://via.placeholder.com/100'}
                             alt={item.name}
                             className="product-image"
                             onError={(e) => e.target.src = 'https://via.placeholder.com/100?text=No+Image'}

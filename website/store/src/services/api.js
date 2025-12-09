@@ -1,353 +1,323 @@
-//src/services/api.js
+// src/services/api.js
 import axios from "axios";
-import { API_ENDPOINTS, STORAGE_KEYS } from "../constants/index";
+import { API_ENDPOINTS, STORAGE_KEYS } from "../constants/index"; 
 
-// ------------------- BASE URLs -------------------
-const BASE_URL =
-  import.meta.env.VITE_API_URL || "http://localhost:8080";
+// --- ORDER (order-service direct calls) ---
+export const ORDER_BASE_URL =
+  import.meta.env.VITE_ORDER_SERVICE_URL || import.meta.env.VITE_API_URL || "http://localhost:8080";
 
-const PRODUCT_BASE_URL =
-  import.meta.env.VITE_PRODUCT_SERVICE_URL ||
-  import.meta.env.VITE_API_URL ||
-  "http://localhost:8080";
+export const orderApi = axios.create({
+  baseURL: ORDER_BASE_URL,
+  timeout: 15000,
+  headers: { "Content-Type": "application/json" },
+});
 
-const TOKEN_KEY = STORAGE_KEYS.TOKEN;
+// attach token if present
+orderApi.interceptors.request.use((cfg) => {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) cfg.headers = { ...(cfg.headers || {}), Authorization: `Bearer ${token}` };
+  return cfg;
+});
 
-// ------------------- MAIN API (Gateway) -------------------
+// orderService: call order-service endpoints
+export const orderService = {
+  createOrder: async (payload) => {
+    // payload must follow backend CreateOrderRequest shape:
+    // { userId, items: [{ productId, variantId, quantity, note? }], shippingAddress?, paymentMethod? }
+    try {
+      const res = await orderApi.post("/api/orders/create", payload);
+      // CreateOrderResponse { orderId, status, payUrl }
+      return res.data;
+    } catch (err) {
+      // throw an Error with message for UI
+      const msg = err?.response?.data?.message || err?.response?.data?.error || err.message || "Order API error";
+      throw new Error(msg);
+    }
+  },
+
+  getOrder: async (orderId) => {
+    try {
+      const res = await orderApi.get(`/api/orders/${encodeURIComponent(orderId)}`);
+      // OrderResponse
+      return res.data;
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.message || "getOrder failed";
+      throw new Error(msg);
+    }
+  },
+
+  cancelOrder: async (orderId) => {
+    try {
+      const res = await orderApi.post(`/api/orders/${encodeURIComponent(orderId)}/cancel`);
+      return res.data;
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.message || "cancelOrder failed";
+      throw new Error(msg);
+    }
+  },
+};
+
+export const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
+export const PRODUCT_BASE_URL =
+  import.meta.env.VITE_PRODUCT_SERVICE_URL || import.meta.env.VITE_API_URL || "http://localhost:8080";
+export const CLOUD_BASE_URL =
+  import.meta.env.VITE_CLOUD_API_URL || import.meta.env.VITE_CLOUD_URL || import.meta.env.VITE_API_URL || "http://localhost:8080";
+
+const TOKEN_KEY = STORAGE_KEYS?.TOKEN || "anta_token";
+
+// ------------------- UTILS -------------------
+const getErrorMessage = (err) => {
+  if (!err) return "Unknown error";
+  if (err?.response?.data?.message) return err.response.data.message;
+  if (err?.response?.data) return JSON.stringify(err.response.data);
+  return err.message || String(err);
+};
+
+// small delay (for mocks)
+const delay = (ms = 200) => new Promise((r) => setTimeout(r, ms));
+
+// ------------------- AXIOS INSTANCES -------------------
 export const api = axios.create({
   baseURL: BASE_URL,
   timeout: 10000,
-  headers: { 'Content-Type': 'application/json' },
-  withCredentials: true
+  headers: { "Content-Type": "application/json" },
+  withCredentials: true,
 });
-
-// attach token
-api.interceptors.request.use((config) => {
+api.interceptors.request.use((cfg) => {
   const token = localStorage.getItem(TOKEN_KEY);
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
+  if (token) cfg.headers = { ...(cfg.headers || {}), Authorization: `Bearer ${token}` };
+  return cfg;
 });
 
-// ------------------- PRODUCT API (Direct product-service) -------------------
+// product-specific instance (direct calls to product-service if needed)
 export const productApi = axios.create({
   baseURL: PRODUCT_BASE_URL,
   timeout: 10000,
-  headers: { "Content-Type": "application/json" }
+  headers: { "Content-Type": "application/json" },
 });
-
-productApi.interceptors.request.use((config) => {
+productApi.interceptors.request.use((cfg) => {
   const token = localStorage.getItem(TOKEN_KEY);
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
+  if (token) cfg.headers = { ...(cfg.headers || {}), Authorization: `Bearer ${token}` };
+  return cfg;
 });
 
-// ------------------- AUTH SERVICE -------------------
+// ------------------- AUTH (gateway) -------------------
 export const authService = {
   login: async (credentials) => {
     const res = await api.post(API_ENDPOINTS.AUTH.LOGIN, credentials);
     return res.data;
   },
-
   register: async (data) => {
     const res = await api.post(API_ENDPOINTS.AUTH.REGISTER, data);
     return res.data;
   },
-
   refreshToken: async (refreshToken) => {
-    const payload =
-      typeof refreshToken === "string"
-        ? { refreshToken }
-        : refreshToken || {};
-
+    const payload = typeof refreshToken === "string" ? { refreshToken } : refreshToken || {};
     const res = await api.post(API_ENDPOINTS.AUTH.REFRESH, payload);
     return res.data;
-  }
+  },
 };
 
-// ------------------- PRODUCT SERVICE (User-facing via gateway) -------------------
+// ------------------- PRODUCT (user-facing via gateway) -------------------
 export const productService = {
   getProducts: async (params = {}) => {
     const res = await api.get(API_ENDPOINTS.PRODUCTS.LIST, { params });
     return res.data;
   },
-
   getProduct: async (id) => {
     const url = API_ENDPOINTS.PRODUCTS.DETAIL.replace(":id", id);
     const res = await api.get(url);
     return res.data;
   },
-
-  searchProducts: async (query) => {
-    const res = await api.get(API_ENDPOINTS.PRODUCTS.SEARCH, {
-      params: { q: query }
-    });
+  searchProducts: async (q) => {
+    const res = await api.get(API_ENDPOINTS.PRODUCTS.SEARCH, { params: { q } });
     return res.data;
-  }
+  },
 };
 
-// CART
-// CART SERVICE - Sửa lại dùng api (không dùng cartApi)
-// CART SERVICE - SỬA LẠI HOÀN TOÀN
+// ------------------- CART (gateway) -------------------
 export const cartService = {
-  // Thêm sản phẩm vào giỏ hàng
   addToCart: async (payload) => {
     try {
-      console.log('📤 Add to cart payload:', payload);
-      const res = await api.post('/api/cart/add', payload);
-      console.log('✅ Add to cart response:', res.data);
+      const res = await api.post("/api/cart/add", payload);
       return res.data;
     } catch (err) {
-      console.error('❌ Add to cart error:', err);
       throw new Error(getErrorMessage(err));
     }
   },
-
-  // Lấy giỏ hàng hiện tại - SỬA LẠI
   getCurrentCart: async (userId, sessionId) => {
     try {
-      console.log('🔍 getCurrentCart called with:', { userId, sessionId });
-
-      let params = {};
-      if (userId) {
-        params.userId = userId;   // Ưu tiên userId
-      } else if (sessionId) {
-        params.sessionId = sessionId; // fallback sang sessionId
-      } else {
-        const storedSession = localStorage.getItem('sessionId');
-        if (storedSession) {
-          params.sessionId = storedSession;
-        }
+      const params = {};
+      if (userId) params.userId = userId;
+      else if (sessionId) params.sessionId = sessionId;
+      else {
+        const stored = localStorage.getItem("sessionId");
+        if (stored) params.sessionId = stored;
       }
-
-      console.log('📤 Fetching cart with params:', params);
-
-      const res = await api.get(`/api/cart/current`, { params });
-
-      console.log('📦 Cart response status:', res.status);
-      console.log('📦 Cart response data:', res.data);
-
-      if (res.status === 204 || !res.data) {
-        console.log('🔄 Cart is empty');
-        return null;
-      }
-
+      const res = await api.get("/api/cart/current", { params });
+      if (res.status === 204 || res.status === 404 || !res.data) return null;
       return res.data;
     } catch (err) {
-      console.error('❌ getCurrentCart error details:', {
-        message: err.message,
-        status: err.response?.status,
-        data: err.response?.data,
-        url: err.config?.url
-      });
-
-      if (err.response?.status === 204 || err.response?.status === 404) {
-        return null;
+      // nếu gateway fail, thử gọi trực tiếp cart-service (fallback)
+      if (err.config?.url?.includes("/api/cart/current")) {
+        try {
+          const direct = await getCartDirectly(userId, sessionId);
+          return direct;
+        } catch (e) { /* ignore */ }
       }
-
-      throw new Error('Có lỗi xảy ra khi tải giỏ hàng');
+      throw new Error("Có lỗi khi tải giỏ hàng: " + getErrorMessage(err));
     }
   },
-
-  // Xoá 1 item khỏi giỏ hàng
   removeItem: async (itemId) => {
     try {
-      console.log('🗑️ Removing item:', itemId);
       await api.delete(`/api/cart/item/${itemId}`);
       return { success: true };
     } catch (err) {
-      console.error('❌ Remove item error:', err);
       throw new Error(getErrorMessage(err));
     }
   },
-
-  // Xoá toàn bộ giỏ hàng
   clearCart: async (cartId) => {
     try {
-      console.log('🧹 Clearing cart:', cartId);
       await api.delete(`/api/cart/${cartId}/clear`);
       return { success: true };
     } catch (err) {
-      console.error('❌ Clear cart error:', err);
       throw new Error(getErrorMessage(err));
     }
   },
-
-  // Cập nhật số lượng - SỬA LẠI (dùng api, không dùng axiosInstance)
   updateQuantity: async (cartId, productId, variantId, newQuantity) => {
     try {
-      console.log('🔢 Update quantity:', {
-        cartId, productId, variantId, newQuantity
-      });
-
-      const params = new URLSearchParams();
-      params.append('productId', productId);
-      params.append('newQuantity', newQuantity);
-
-      // CHỈ thêm variantId nếu có
-      if (variantId !== null && variantId !== undefined) {
-        params.append('variantId', variantId);
-      }
-
-      console.log('📤 Update params:', params.toString());
-
-      // DÙNG api (đã có interceptor với token)
       const res = await api.put(`/api/cart/${cartId}/items/quantity`, null, {
-        params: {
-          productId: Number(productId),
-          variantId: variantId ?? null,   // sẽ gửi nếu có, bỏ qua nếu null
-          newQuantity: Number(newQuantity),
-        },
-      });
-
-      console.log('✅ Update response:', res.data);
-      return res.data;
-
-    } catch (error) {
-      console.error('❌ Update quantity error:', error);
-      throw new Error(getErrorMessage(error));
-    }
-  },
-
-  // Merge giỏ hàng
-  mergeCart: async (sessionId, userId) => {
-    try {
-      console.log('🔄 Merging cart:', { sessionId, userId });
-      const res = await api.post('/api/cart/merge', null, {
-        params: { sessionId, userId }
+        params: { productId: Number(productId), variantId: variantId ?? null, newQuantity: Number(newQuantity) },
       });
       return res.data;
     } catch (err) {
-      console.error('❌ Merge cart error:', err);
       throw new Error(getErrorMessage(err));
     }
-  }
+  },
+  mergeCart: async (sessionId, userId) => {
+    try {
+      const res = await api.post("/api/cart/merge", null, { params: { sessionId, userId } });
+      return res.data;
+    } catch (err) {
+      throw new Error(getErrorMessage(err));
+    }
+  },
 };
 
-// Hàm helper gọi trực tiếp đến cart-service (nếu gateway có vấn đề)
+// direct cart-service fallback
 const getCartDirectly = async (userId, sessionId) => {
   try {
-    console.log('🔗 Trying direct connection to cart-service...');
-
     const params = new URLSearchParams();
-    if (userId) params.append('userId', userId);
-    if (sessionId) params.append('sessionId', sessionId);
-
-    // Gọi trực tiếp đến cart-service:8088 (bypass gateway)
-    const response = await fetch(`http://localhost:8088/api/cart/current?${params}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        // Thêm token nếu có
-        ...(localStorage.getItem(STORAGE_KEYS.TOKEN) ? {
-          'Authorization': `Bearer ${localStorage.getItem(STORAGE_KEYS.TOKEN)}`
-        } : {})
-      }
+    if (userId) params.append("userId", userId);
+    if (sessionId) params.append("sessionId", sessionId);
+    const url = `http://localhost:8088/api/cart/current?${params.toString()}`; // adjust port if needed
+    const token = localStorage.getItem(TOKEN_KEY);
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     });
-
-    if (response.status === 204 || response.status === 404) {
-      return null;
-    }
-
-    const data = await response.json();
-    console.log('📦 Direct cart response:', data);
+    if (res.status === 204 || res.status === 404) return null;
+    const data = await res.json();
     return data;
-
   } catch (err) {
-    console.error('❌ Direct connection also failed:', err);
+    console.warn("[getCartDirectly] failed", err);
     return null;
   }
 };
 
-// USER (some endpoints may be mocks if BE not ready)
+// ------------------- USER (mix gateway + mocks) -------------------
+// if backend not ready, these endpoints act as wrapper / passthrough
 export const userService = {
   getProfile: async () => {
-    const user = JSON.parse(localStorage.getItem(STORAGE_KEYS.USER) || "null");
-    return {
-      fullName: user?.username || "",
-      email: user?.email || "",
-      phone: "",
-      birthday: "",
-      gender: ""
-    };
-  },
-
-  updateProfile: async (data) => {
-    return data;
-  },
-
-  changePassword: async () => {
-    return { message: "Đổi mật khẩu thành công (mock)" };
-  },
-
-  getAddresses: async () => {
-    const user = JSON.parse(localStorage.getItem(STORAGE_KEYS.USER) || "null");
-    if (!user) return [];
-
-    const res = await api.get(`/api/address/allUserAddress/${user.id}`);
-    const d = res.data;
-
-    if (Array.isArray(d)) return d;
-    if (typeof d === "object") {
-      return Object.values(d).find((v) => Array.isArray(v)) || [];
+    // try localStorage first (fast)
+    const fromLS = JSON.parse(localStorage.getItem("anta_user_profile") || "null");
+    if (fromLS) return fromLS;
+    // fallback to gateway
+    try {
+      const res = await api.get("/api/user/profile");
+      return res.data;
+    } catch (err) {
+      // fallback to minimal mock
+      return { fullName: "", email: "", phone: "" };
     }
-    return [];
   },
-
-  addAddress: async (data) => {
-    const user = JSON.parse(localStorage.getItem(STORAGE_KEYS.USER) || "null");
-    const payload = {
-      detailedAddress: data.detailedAddress || data.address,
-      country: data.country || "Vietnam",
-      phoneNumber: data.phoneNumber || data.phone,
-      recipientName: data.recipientName,
-      postalCode: data.postalCode || "",
-      isDefault: data.isDefault || false
+  updateProfile: async (data) => {
+    try {
+      const res = await api.put("/api/user/profile", data);
+      // update LS for cross-page auto-fill
+      try { localStorage.setItem("anta_user_profile", JSON.stringify(res.data)); } catch {}
+      return res.data;
+    } catch (err) {
+      // fallback: update LS only
+      try { localStorage.setItem("anta_user_profile", JSON.stringify(data)); } catch {}
+      return data;
+    }
+  },
+  getAddresses: async () => {
+    try {
+      const res = await api.get("/api/address/allUserAddress");
+      // normalize shapes
+      const d = res.data;
+      if (Array.isArray(d)) return d;
+      if (typeof d === "object") {
+        // try find an array inside object
+        for (const k of Object.keys(d)) {
+          if (Array.isArray(d[k])) return d[k];
+        }
+      }
+      return [];
+    } catch (err) {
+      // fallback to LS/mock
+      try {
+        const ls = JSON.parse(localStorage.getItem("anta_user_addresses") || "[]");
+        return ls;
+      } catch { return []; }
+    }
+  },
+  addAddress: async (payload) => {
+    const user = JSON.parse(localStorage.getItem(STORAGE_KEYS?.USER || "null") || "null");
+    if (!user) throw new Error("User not found");
+    const body = {
+      detailedAddress: payload.detailedAddress || payload.address,
+      country: payload.country || "Vietnam",
+      phoneNumber: payload.phoneNumber || payload.phone,
+      recipientName: payload.recipientName,
+      postalCode: payload.postalCode || "",
+      isDefault: !!payload.isDefault,
     };
-
-    const res = await api.post(`/api/address/add/${user.id}`, payload);
-    return Object.keys(res.data)[0];
+    const res = await api.post(`/api/address/add/${user.id}`, body);
+    return res.data;
   },
-
-  updateAddress: async (id, data) => {
-    const user = JSON.parse(localStorage.getItem(STORAGE_KEYS.USER) || "null");
-    const payload = {
-      detailedAddress: data.detailedAddress || data.address,
-      country: data.country || "Vietnam",
-      phoneNumber: data.phoneNumber || data.phone,
-      recipientName: data.recipientName,
-      postalCode: data.postalCode || "",
-      isDefault: data.isDefault || false
+  updateAddress: async (id, payload) => {
+    const user = JSON.parse(localStorage.getItem(STORAGE_KEYS?.USER || "null") || "null");
+    const body = {
+      detailedAddress: payload.detailedAddress || payload.address,
+      country: payload.country || "Vietnam",
+      phoneNumber: payload.phoneNumber || payload.phone,
+      recipientName: payload.recipientName,
+      postalCode: payload.postalCode || "",
+      isDefault: !!payload.isDefault,
     };
-
-    const res = await api.put(`/api/address/update/addressId/${id}/userId/${user.id}`, payload);
-    return Object.keys(res.data)[0];
+    const res = await api.put(`/api/address/update/addressId/${id}/userId/${user.id}`, body);
+    return res.data;
   },
-
   deleteAddress: async (id) => {
-    const user = JSON.parse(localStorage.getItem(STORAGE_KEYS.USER) || "null");
+    const user = JSON.parse(localStorage.getItem(STORAGE_KEYS?.USER || "null") || "null");
     const res = await api.delete(`/api/address/delete/addressId/${id}/userId/${user.id}`);
     return res.data;
   },
-
   setDefaultAddress: async (id) => {
-    const user = JSON.parse(localStorage.getItem(STORAGE_KEYS.USER) || "null");
+    const user = JSON.parse(localStorage.getItem(STORAGE_KEYS?.USER || "null") || "null");
     const res = await api.put(`/api/address/setDefault/${id}/user/${user.id}`);
     return res.data;
-  }
+  },
 };
 
-// ------------------- MOCK ORDER SERVICE -------------------
-export const orderService = {
-  getOrders: async () => [],
-  getOrder: async () => null,
-  cancelOrder: async () => ({ message: "Canceled (mock)" })
-};
-
-// ------------------- MOCK WISHLIST SERVICE -------------------
+// ------------------- MOCKS (simple) -------------------
 export const wishlistService = {
-  getWishlist: async () => [],
+  getWishlist: async () => { await delay(); return []; },
   addToWishlist: async () => ({ success: true }),
-  removeFromWishlist: async () => ({ success: true })
+  removeFromWishlist: async () => ({ success: true }),
 };
 
 export default api;
