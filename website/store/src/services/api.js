@@ -55,16 +55,6 @@ export const orderService = {
       throw new Error(msg);
     }
   },
-
-  getOrders: async () => {
-    try {
-      const res = await orderApi.get("/api/orders/user");
-      return res.data;
-    } catch (err) {
-      const msg = err?.response?.data?.message || err?.message || "getOrders failed";
-      throw new Error(msg);
-    }
-  },
 };
 
 export const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
