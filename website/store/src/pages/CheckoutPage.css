@@ -1647,3 +1647,44 @@
 
 /* Dùng lại lớp sẵn có của QR modal: .qr-modal-overlay, .qr-modal, .qr-header, .qr-actions, .btn-primary, .btn-secondary, .btn-link */
 
+/* Waiting modal - centered full-screen spinner */
+.qr-modal-overlay.waiting-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 20px;
+}
+
+.qr-modal.waiting-modal {
+  width: 420px;
+  max-width: calc(100% - 40px);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.28);
+  padding: 28px;
+  box-sizing: border-box;
+}
+
+.waiting-inner { text-align: center; }
+
+.waiting-spinner {
+  width: 84px;
+  height: 84px;
+  margin: 0 auto;
+  border-radius: 50%;
+  border: 10px solid rgba(0,0,0,0.08);
+  border-top-color: #ff7a00; /* accent color */
+  animation: spin 1s linear infinite;
+  box-sizing: border-box;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* small responsive tweak */
+@media (max-width: 480px) {
+  .qr-modal.waiting-modal { width: 100%; padding: 20px; border-radius: 10px; }
+}

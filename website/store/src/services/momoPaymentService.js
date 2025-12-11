@@ -1,20 +1,14 @@
 // src/services/momoPaymentService.js
-// Unified MoMo payment service for frontend
-// - If VITE_MOMO_SIMULATION === 'true' -> use local simulation (your existing logic)
-// - Otherwise -> call backend endpoints (payment-service) via api instance
-
+// Unified MoMo payment service for frontend (improved for pending_payment handling)
 import { api } from "./api";
 
 /**
  * ENV switches:
  * - import.meta.env.VITE_MOMO_SIMULATION === 'true'  -> use local simulation (dev)
- * - otherwise calls backend /api/payments/create and /api/payments/status/:requestId
- *
- * NOTE: If you import momoPaymentService from ../services (index.js), ensure index exports it:
- *   export { momoPaymentService } from './momoPaymentService';
+ * - otherwise calls backend endpoints (payment-service) via api instance
  */
 
-// -------------------- SIMULATION CLASS (adapted from your file) --------------------
+// -------------------- SIMULATION CLASS (unchanged, minor cosmetic) --------------------
 class SimulatedMoMoPaymentService {
   constructor() {
     this.pendingPayments = new Map();
@@ -32,26 +26,68 @@ class SimulatedMoMoPaymentService {
     return `MOMO${timestamp}${random}`.slice(0, 20);
   }
 
-  createPaymentRequest(orderData) {
-    const { total, orderNumber } = orderData;
-    const transactionId = this.generateTransactionId();
+  async createPaymentRequest(orderData) {
+    try {
+      // Validate amount presence early — backend expects amount or total
+      const providedAmount = orderData?.amount ?? orderData?.total ?? null;
+      // If you prefer FE may allow backend to use orderId to compute amount,
+      // you can comment this check out. But it's safer to ensure a numeric amount.
+      if (providedAmount == null || Number.isNaN(Number(providedAmount))) {
+        // Don't throw — return structured error so FE can show details
+        return { success: false, error: 'Missing or invalid amount. Provide numeric "amount" or "total".', raw: orderData };
+      }
 
-    const paymentRequest = {
-      transactionId,
-      orderNumber,
-      amount: total,
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-      qrCodeData: this.generateQRCodeData(transactionId, total, orderNumber),
-    };
+      const res = await api.post(this.createEndpoint, orderData);
+      // axios usually returns { data: ... }
+      const rawResp = res && res.data ? res.data : res;
 
-    this.pendingPayments.set(transactionId, paymentRequest);
+      const normalized = this._normalizeCreateResp(rawResp);
 
-    return {
-      success: true,
-      data: paymentRequest,
-    };
+      // Logging for debug: include raw response when no useful field found
+      if (!normalized.payUrl && !normalized.requestId) {
+        console.warn('[momo] createPaymentRequest: no payUrl/requestId found', { normalized, rawResp });
+      }
+
+      // If payUrl exists, return (FE can redirect immediately)
+      if (normalized.payUrl) {
+        return {
+          success: true,
+          data: {
+            payUrl: normalized.payUrl,
+            requestId: normalized.requestId,
+            orderId: normalized.orderId,
+            raw: normalized.raw
+          }
+        };
+      }
+
+      // If requestId present (polling mode) -> FE can poll
+      if (normalized.requestId) {
+        return {
+          success: true,
+          data: {
+            requestId: normalized.requestId,
+            orderId: normalized.orderId,
+            raw: normalized.raw
+          }
+        };
+      }
+
+      // fallback: if backend returned an object with payment info under .data
+      if (rawResp && (rawResp.payUrl || rawResp.requestId || rawResp.transactionId)) {
+        return { success: true, data: { ...rawResp } };
+      }
+
+      // else return a failure but include raw payload to help debugging
+      return { success: false, error: 'Unexpected create-payment response shape', raw: normalized.raw || rawResp };
+    } catch (err) {
+      const payload = err?.response?.data || err?.message || String(err);
+      console.error('[momo] createPaymentRequest error', payload);
+      // Return structured error so FE can surface backend message
+      return { success: false, error: payload, rawError: err?.response?.data ?? null };
+    }
   }
+
 
   generateQRCodeData(transactionId, amount, orderNumber) {
     return {
@@ -61,9 +97,7 @@ class SimulatedMoMoPaymentService {
       amount,
       note: `ANTA ${orderNumber}`,
       bankCode: 'MOMO',
-      // qrContent shape is simulated; real provider expects specific format
       qrContent: `2|99|0974945488|ANTA VIETNAM|${amount}|ANTA ${orderNumber}|0|0|${amount}`,
-      // convenience: a simple visually-scannable payload for QR generation
     };
   }
 
@@ -165,59 +199,171 @@ class SimulatedMoMoPaymentService {
   }
 }
 
-// -------------------- REAL (backend-backed) SERVICE --------------------
+// -------------------- REAL (backend-backed) SERVICE (IMPROVED) --------------------
 class BackendMoMoPaymentService {
   constructor() {
     this.createEndpoint = "/api/payments/create";
     this.statusEndpoint = (requestId) => `/api/payments/status/${encodeURIComponent(requestId)}`;
+    this.orderEndpoint = (orderId) => `/api/orders/${encodeURIComponent(orderId)}`;
+    // polling defaults
+    this.DEFAULT_INTERVAL = 3000;
+    this.DEFAULT_TIMEOUT = 120000;
   }
 
-  // orderData shape should match backend expectation:
-  // { orderId, userId, amount, items, customer, orderNumber, ... }
+  // helper to normalize backend response shape
+  _normalizeCreateResp(raw) {
+    // raw may be:
+    // - CreateMomoResponse: { requestId, orderId, payUrl, resultCode, message, ... }
+    // - MomoFrontendResponse: { requestId, transactionId, amount, payUrl, ... }
+    // - existing wrappers: { data: {...} } (if proxied)
+    const obj = raw && raw.data ? raw.data : raw;
+    if (!obj) return {};
+
+    const payUrl = obj.payUrl || obj.data?.payUrl || obj.paymentUrl || obj.url || null;
+    const requestId = obj.requestId || obj.transactionId || obj.request_id || (obj.data && (obj.data.requestId || obj.data.transactionId)) || null;
+    const orderId = obj.orderId || obj.partnerOrderId || obj.data?.orderId || null;
+    const resultCode = obj.resultCode ?? obj.result_code ?? null;
+    const message = obj.message || obj.msg || obj.data?.message || null;
+
+    return { raw: obj, payUrl, requestId, orderId, resultCode, message };
+  }
+
   async createPaymentRequest(orderData) {
     try {
       const res = await api.post(this.createEndpoint, orderData);
-      // backend returns MomoFrontendResponse as described in backend changes
-      return { success: true, data: res.data };
+      const normalized = this._normalizeCreateResp(res.data ?? res);
+
+      // If payUrl exists, return immediately (FE can redirect)
+      if (normalized.payUrl) {
+        return { success: true, data: { payUrl: normalized.payUrl, requestId: normalized.requestId, orderId: normalized.orderId, raw: normalized.raw } };
+      }
+
+      // if requestId present, return it so FE can poll
+      if (normalized.requestId) {
+        return { success: true, data: { requestId: normalized.requestId, orderId: normalized.orderId, raw: normalized.raw } };
+      }
+
+      // fallback: return full raw response
+      return { success: true, data: { raw: normalized.raw } };
     } catch (err) {
-      return { success: false, error: err?.response?.data || err?.message || String(err) };
+      const payload = err?.response?.data || err?.message || String(err);
+      console.error('[momo] createPaymentRequest error', payload);
+      return { success: false, error: payload };
     }
   }
 
   async getPaymentStatus(requestId) {
     try {
       const res = await api.get(this.statusEndpoint(requestId));
+      // res.data expected { status: 'PENDING'|'SUCCESS'|'FAILED', paymentId, orderId, ...}
       return { success: true, data: res.data };
     } catch (err) {
       return { success: false, error: err?.response?.data || err?.message || String(err) };
     }
   }
 
-  async autoProcessPayment(requestId, onProgress, opts = { interval: 3000, timeout: 120000 }) {
+  // poll with optional fallback to check order endpoint
+  async autoProcessPayment(requestId, orderId = null, onProgress = null, opts = {}) {
+    const interval = opts.interval || this.DEFAULT_INTERVAL;
+    const timeout = opts.timeout || this.DEFAULT_TIMEOUT;
     const start = Date.now();
-    while (Date.now() - start < opts.timeout) {
-      if (onProgress) onProgress({ status: "polling" });
-      const st = await this.getPaymentStatus(requestId);
+    let attempt = 0;
+
+    while (Date.now() - start < timeout) {
+      attempt++;
+      if (onProgress) onProgress({ status: 'polling', attempt });
+
+      let st;
+      try {
+        st = await this.getPaymentStatus(requestId);
+      } catch (e) {
+        st = { success: false, error: e };
+      }
+
       if (st.success && st.data) {
-        const s = String(st.data.status || "").toUpperCase();
-        if (s === "SUCCESS" || s === "PAID" || s === "COMPLETED") {
-          if (onProgress) onProgress({ status: "success", message: "Thanh toán thành công (backend)" });
-          return { success: true, data: st.data };
+        const statusRaw = (st.data.status || st.data.result || st.data.resultCode || st.data.paymentStatus || '').toString().toUpperCase();
+        // accept many synonyms
+        if (['SUCCESS', 'PAID', 'COMPLETED', '0'].includes(statusRaw) || (st.data.resultCode !== undefined && Number(st.data.resultCode) === 0)) {
+          if (onProgress) onProgress({ status: 'success', data: st.data });
+          return { success: true, source: 'payment', data: st.data };
         }
-        if (s === "FAILED") {
-          if (onProgress) onProgress({ status: "failed", message: "Thanh toán thất bại (backend)" });
-          return { success: false, error: "Payment failed" };
+        if (['FAILED', 'CANCELLED', 'ERROR'].includes(statusRaw) || (st.data.resultCode !== undefined && Number(st.data.resultCode) !== 0 && !['PENDING', '0'].includes(statusRaw))) {
+          if (onProgress) onProgress({ status: 'failed', data: st.data });
+          return { success: false, source: 'payment', data: st.data };
+        }
+        // otherwise still pending — continue
+      }
+
+      // fallback: if orderId known, check order endpoint (order service may be updated by payment-service)
+      if (orderId) {
+        try {
+          if (onProgress) onProgress({ status: 'checking_order', orderId });
+          const od = await api.get(this.orderEndpoint(orderId));
+          const order = od.data;
+          const orderStatus = (order && order.status) ? order.status.toString().toUpperCase() : null;
+          if (['PAID', 'COMPLETED'].includes(orderStatus)) {
+            if (onProgress) onProgress({ status: 'order_paid', order });
+            return { success: true, source: 'order', data: order };
+          }
+          if (['FAILED', 'CANCELLED'].includes(orderStatus)) {
+            if (onProgress) onProgress({ status: 'order_failed', order });
+            return { success: false, source: 'order', data: order };
+          }
+        } catch (e) {
+          // ignore — maybe order endpoint not reachable from FE (gateway)
         }
       }
-      await new Promise(r => setTimeout(r, opts.interval));
+
+      // sleep then retry
+      await new Promise(r => setTimeout(r, interval));
     }
-    return { success: false, error: "Timeout waiting for payment" };
+
+    // timed out — return pending result
+    if (onProgress) onProgress({ status: 'timeout' });
+    return { success: false, error: 'timeout waiting for payment' };
   }
 
-  // convenience wrappers
+  // convenience wrapper: create then wait for final status
+  async createAndWaitForPayment(orderData, onProgress = null, opts = {}) {
+    onProgress && onProgress({ status: 'creating' });
+    const createRes = await this.createPaymentRequest(orderData);
+    if (!createRes.success) {
+      onProgress && onProgress({ status: 'create_failed', error: createRes.error });
+      return createRes;
+    }
+    const data = createRes.data || {};
+    // If payUrl present — FE can redirect or show QR immediately
+    if (data.payUrl) {
+      onProgress && onProgress({ status: 'payurl', payUrl: data.payUrl });
+      // return immediately but still you may want to poll by requestId if available
+      if (data.requestId) {
+        // optionally wait in background
+        return { success: true, data: { payUrl: data.payUrl, requestId: data.requestId, orderId: data.orderId } };
+      }
+      return { success: true, data: { payUrl: data.payUrl, orderId: data.orderId } };
+    }
+
+    // If requestId present — poll backend
+    if (data.requestId) {
+      onProgress && onProgress({ status: 'polling_start', requestId: data.requestId });
+      const pollRes = await this.autoProcessPayment(data.requestId, data.orderId || orderData.orderId, onProgress, opts);
+      // If pollRes indicates success or failure — return it
+      return pollRes;
+    }
+
+    // else, unknown shape — return raw
+    return { success: true, data: data.raw || createRes.data };
+  }
+
   async cancelPayment(requestId) {
-    // not implemented on backend by default; you can call a cancel endpoint if exists
-    return { success: false, error: "Cancel not supported" };
+    // not implemented in backend by default — but FE can call custom endpoint if exists
+    try {
+      // try generic endpoint if exists
+      const res = await api.post(`/api/payments/cancel/${encodeURIComponent(requestId)}`);
+      return { success: true, data: res.data };
+    } catch (e) {
+      return { success: false, error: 'Cancel not supported' };
+    }
   }
 
   getPaymentDetails(requestId) {

@@ -1,9 +1,11 @@
+//src/App.jsx
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { DataSyncProvider, CartProvider, AuthProvider, OrderProvider, WishlistProvider, UserDataProvider } from "./contexts";
 import { ToastProvider } from "./components/ToastContainer";
 import { ProtectedRoute } from "./components";
 import { ROUTES } from "./constants";
 import TestCart from "./components/TestCart";
+import MomoReturnPage from './pages/MomoReturnPage';
 import {
   HomePage,
   Login,
@@ -59,6 +61,7 @@ function App() {
                       <Route path="/exclusive" element={<ProductListPage />} />
                       <Route path="*" element={<Navigate to="/" />} />
                       <Route path="/test-cart" element={<TestCart />} />
+                      <Route path="/momo-return" element={<MomoReturnPage/>} />
                     </Routes>
                   </Router>
                 </CartProvider>

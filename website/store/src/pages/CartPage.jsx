@@ -1,3 +1,4 @@
+//src/pages/CartPage.jsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useCart } from '../contexts';
@@ -222,10 +223,34 @@ export default function CartPage() {
       return;
     }
 
+    // Kiểm tra xem có item nào thiếu variantId / size / color không
+    const missing = items.filter(it => {
+      const vid = it.variantId ?? null;
+      const size = it.size ?? null;
+      const color = it.color ?? null;
+      // Nếu bạn cho phép chỉ cần variantId thì bỏ size/color check.
+      // Ở đây ta yêu cầu cả variantId + size + color (theo yêu cầu của bạn).
+      return !(vid && size && color);
+    });
+
+    if (missing.length > 0) {
+      const names = missing.map(m => m.name || `#${m.productId || m.id}`).join(', ');
+      alert(`Không thể tiến hành thanh toán. Một số sản phẩm thiếu thông tin biến thể (size/màu/variant). Vui lòng kiểm tra: ${names}`);
+      return;
+    }
+
     const orderData = {
       items: items.map((item) => ({
-        ...item,
+        id: item.id,
+        productId: item.productId,
+        variantId: item.variantId ?? null,
+        name: item.name,
         quantity: getLocalQty(item),
+        price: item.price,
+        size: item.size ?? null,
+        color: item.color ?? null,
+        sku: item.sku ?? null,
+        image: item.image ?? null
       })),
       coupon: appliedCoupon,
       notes: orderNotes,
@@ -236,9 +261,16 @@ export default function CartPage() {
         shipping,
         total: finalTotal,
       },
+      createdAt: new Date().toISOString()
     };
 
-    localStorage.setItem('checkout_data', JSON.stringify(orderData));
+    // lưu backup để Checkout có thể đọc nếu cần
+    try {
+      localStorage.setItem('checkout_data', JSON.stringify(orderData));
+    } catch (e) {
+      console.warn('Could not save checkout_data', e);
+    }
+
     navigate('/checkout');
   };
 

@@ -31,10 +31,8 @@ export function useCart() {
 
       let response;
       if (user?.id) {
-        // ưu tiên giỏ theo userId
         response = await cartService.getCurrentCart(user.id, null);
       } else {
-        // guest: lấy theo sessionId
         response = await cartService.getCurrentCart(null, sessionId);
       }
 
@@ -61,7 +59,7 @@ export function useCart() {
       try {
         await cartService.mergeCart(sessionId, currentUser.id);
         setHasMerged(true);
-        await fetchCart(); // sau merge luôn fetch theo userId
+        await fetchCart();
       } catch (err) {
         console.error("❌ Merge cart error:", err);
       }
@@ -70,22 +68,48 @@ export function useCart() {
     mergeCartsOnLogin();
   }, [user?.id, sessionId, hasMerged, fetchCart]);
 
+  // --- helper: resolve variantId from various possible shapes
+  const resolveVariantId = (product) => {
+    if (!product) return null;
+    const cand =
+      product.variantId ??
+      (product.variant && (product.variant.id ?? product.variantId)) ??
+      product.selectedVariantId ??
+      product.selectedVariant?.id ??
+      product.option?.variantId ??
+      null;
+    if (cand === undefined) return null;
+    if (cand === null) return null;
+    if (typeof cand === "string" && cand.trim() === "") return null;
+    const n = Number(cand);
+    return Number.isNaN(n) ? null : n;
+  };
+
   // ============= CRUD CART =============
+  // file: src/hooks/useCart.js (function addItem)
   const addItem = async (product) => {
     const payload = {
       userId: user?.id || null,
       sessionId: user ? null : sessionId,
       productId: Number(product.id),
-      variantId: product.variantId ? Number(product.variantId) : null,
+      variantId: resolveVariantId(product), // đảm bảo null hoặc số
       productName: product.name,
       unitPrice: Number(product.price),
       quantity: product.quantity || 1,
+      // NEW: include variant attributes so BE can save/display them
+      size: product.size || null,
+      color: product.color || null,
+      sku: product.sku || null,
+      imageUrl: product.image || null,
     };
+
+    console.log("➕ [useCart] addItem payload:", payload);
 
     const updatedCart = await cartService.addToCart(payload);
     setCart(updatedCart);
     return updatedCart;
   };
+
 
   const removeItem = async (itemId) => {
     await cartService.removeItem(itemId);
@@ -94,26 +118,24 @@ export function useCart() {
 
   const clearCart = async () => {
     if (!cart?.id) return;
-    await cartService.clearCart(cart.id); // 👈 CÁI NÀY CHỈ DÙNG KHI BẠN BẤM "XÓA GIỎ HÀNG" TRÊN UI
+    await cartService.clearCart(cart.id);
     await fetchCart();
   };
 
   const updateQuantity = async (productId, variantId, newQuantity) => {
     if (!cart?.id) throw new Error("No cart found");
+    const resolvedVariant = variantId === undefined ? null : (variantId === null ? null : Number(variantId));
     const updatedCart = await cartService.updateQuantity(
       cart.id,
       Number(productId),
-      variantId,
+      resolvedVariant,
       Number(newQuantity)
     );
     setCart(updatedCart);
     return updatedCart;
   };
 
-  // ============= RESET KHI LOGOUT – CHỈ FE, KHÔNG ĐỤNG DB =============
   const resetCartAfterLogout = () => {
-    // ❌ KHÔNG gọi clearCart / API
-    // ❌ KHÔNG xoá sessionId (để DB giữ nguyên mọi thứ)
     setCart(null);
     setHasMerged(false);
   };
@@ -123,11 +145,11 @@ export function useCart() {
     loading,
     addItem,
     removeItem,
-    clearCart,              // dùng cho nút "Xóa tất cả" trong CartPage
+    clearCart,
     updateQuantity,
     refreshCart: fetchCart,
-    mergeGuestToUser: async () => {}, // hiện chưa dùng, để trống cũng được
-    resetCartAfterLogout,   // 👉 dùng khi logout
+    mergeGuestToUser: async () => { },
+    resetCartAfterLogout,
 
     get items() {
       return cart?.items || [];

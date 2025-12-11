@@ -1,3 +1,4 @@
+//src/pages/OrderSuccessPage.jsx
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Layout } from '../components';
@@ -5,6 +6,38 @@ import { useOrders } from '../contexts';
 import { useToast } from '../components/ToastContainer';
 import { STORAGE_KEYS } from '../constants';
 import './OrderSuccessPage.css';
+// ---------- helper functions ----------
+const isPaidStatus = (rawOrStatus) => {
+  if (!rawOrStatus) return false;
+  // rawOrStatus may be string or object
+  const v = (typeof rawOrStatus === 'string')
+    ? rawOrStatus
+    : (rawOrStatus.status || rawOrStatus.paymentStatus || rawOrStatus.resultCode || rawOrStatus.payment_status || rawOrStatus.statusText || rawOrStatus.status_code || rawOrStatus.state || '');
+  const s = String(v || '').toUpperCase();
+  // accept many synonyms
+  if (s === '0') return true; // momo result code 0
+  return ['PAID', 'SUCCESS', 'COMPLETED', 'DONE', 'OK'].includes(s);
+};
+
+const extractDisplayOrderNumber = (raw) => {
+  if (!raw) return '';
+  // possible fields
+  const cand = [raw.orderNumber, raw.orderId, raw.order_number, raw.id, raw.code, raw.orderNo, raw.order_no];
+  for (const c of cand) {
+    if (!c && c !== 0) continue;
+    const s = String(c);
+    // if partnerOrderId like "6-uuid", take numeric prefix
+    if (s.includes('-')) {
+      const prefix = s.split('-', 1)[0];
+      if (/^\d+$/.test(prefix)) return prefix;
+    }
+    // if purely numeric string -> return
+    if (/^\d+$/.test(s)) return s;
+    // otherwise return the first non-empty candidate as fallback
+    return s;
+  }
+  return '';
+};
 
 export default function OrderSuccessPage() {
   const navigate = useNavigate();
@@ -44,7 +77,6 @@ export default function OrderSuccessPage() {
       const normalized = {
         orderNumber: raw.orderNumber || raw.id || `ANT${Date.now().toString().slice(-8)}`,
         orderDate: raw.orderDate || raw.date || raw.createdAt || new Date().toISOString(),
-        // ensure items is an array (try multiple possible keys)
         items: Array.isArray(raw.items)
           ? raw.items
           : Array.isArray(raw.products)
@@ -52,13 +84,25 @@ export default function OrderSuccessPage() {
             : Array.isArray(raw.itemsOrdered)
               ? raw.itemsOrdered
               : [],
-        // numeric fields
         subtotal: Number(raw.subtotal ?? raw.total ?? raw.totalAmount ?? 0),
         discount: Number(raw.discount ?? 0),
         shipping: Number(raw.shipping ?? 0),
         total: Number(raw.total ?? raw.totalAmount ?? raw.subtotal ?? 0),
         promoCode: raw.promoCode ?? raw.promo ?? '',
-        // customer object normalization
+
+        // 👉 NEW: chuẩn hoá phương thức & trạng thái thanh toán
+        paymentMethod:
+          raw.paymentMethod ||
+          raw.payment_method ||
+          raw.payment ||
+          (raw.customer && raw.customer.paymentMethod) ||
+          'cod',
+        paymentStatus:
+          raw.paymentStatus ||
+          raw.payment_status ||
+          raw.status ||
+          '',
+
         customer: {
           fullName:
             (raw.customer && (raw.customer.fullName || raw.customer.name)) ||
@@ -85,9 +129,10 @@ export default function OrderSuccessPage() {
           city: (raw.customer && raw.customer.city) || raw.city || '',
           note: (raw.customer && raw.customer.note) || raw.note || ''
         },
-        // keep raw for debug if needed
+
         raw
       };
+
 
       // If subtotal is zero but items available, compute subtotal from items
       if ((!normalized.subtotal || normalized.subtotal === 0) && normalized.items.length > 0) {
@@ -99,7 +144,17 @@ export default function OrderSuccessPage() {
       }
 
       setOrderData(normalized);
-      setPaymentConfirmed(Boolean(location.state?.paymentConfirmed || raw.paymentConfirmed || false));
+
+      // paymentConfirmed: location.state explicit OR raw fields indicating paid
+      const autoPaid = Boolean(
+        location.state?.paymentConfirmed ||
+        raw.paymentConfirmed ||
+        isPaidStatus(raw.paymentStatus || raw.status || raw.payment_status) ||
+        isPaidStatus(normalized.paymentStatus) ||
+        isPaidStatus(raw) // generic check on raw object fields
+      );
+      setPaymentConfirmed(Boolean(autoPaid));
+
       refreshOrders?.();
 
       setShowAnimation(true);
@@ -131,7 +186,9 @@ export default function OrderSuccessPage() {
     );
   }
 
-  const orderNumber = orderData.orderNumber || `ANT${Date.now().toString().slice(-8)}`;
+  const orderNumber = extractDisplayOrderNumber(orderData) || (orderData.orderNumber || orderData.raw?.orderNumber || '');
+  const fullPartnerOrderId = (orderData.raw && (orderData.raw.orderId || orderData.raw.partnerOrderId || orderData.raw.order_id)) || null;
+
   const orderDate = new Date(orderData.orderDate || Date.now()).toLocaleDateString('vi-VN', {
     day: '2-digit',
     month: '2-digit',
@@ -166,7 +223,10 @@ export default function OrderSuccessPage() {
     };
     return icons[method] || '💰';
   };
-
+  const paymentMethod = orderData.paymentMethod
+    || orderData.raw?.paymentMethod
+    || orderData.customer?.paymentMethod
+    || 'cod';
   return (
     <Layout>
       <div className="order-success-page">
@@ -182,8 +242,9 @@ export default function OrderSuccessPage() {
             <p className="success-subtitle">Cảm ơn bạn đã tin tưởng và mua sắm tại ANTA Việt Nam</p>
             <div className="order-number-display">
               <span className="order-label">Mã đơn hàng:</span>
-              <span className="order-value">{orderNumber}</span>
+              <span className="order-value">{fullPartnerOrderId || orderData.orderNumber || 'N/A'}</span>
             </div>
+
           </div>
 
           <div className="order-timeline">
@@ -224,40 +285,27 @@ export default function OrderSuccessPage() {
             <div className="main-content">
               <div className="info-card">
                 <div className="card-header">
-                  <h2>Thông tin giao hàng</h2>
+                  <h2>Phương thức thanh toán</h2>
                 </div>
                 <div className="card-body">
-                  <div className="info-row">
-                    <span className="info-key">Người nhận</span>
-                    <span className="info-val">{orderData.customer.fullName}</span>
-                  </div>
-                  <div className="info-row">
-                    <span className="info-key">Số điện thoại</span>
-                    <span className="info-val">{orderData.customer.phone}</span>
-                  </div>
-                  {orderData.customer.email && (
-                    <div className="info-row">
-                      <span className="info-key">Email</span>
-                      <span className="info-val">{orderData.customer.email}</span>
-                    </div>
-                  )}
-                  <div className="info-row">
-                    <span className="info-key">Địa chỉ giao hàng</span>
-                    <span className="info-val">
-                      {orderData.customer.address}
-                      {orderData.customer.ward && `, ${orderData.customer.ward}`}
-                      {orderData.customer.district && `, ${orderData.customer.district}`}
-                      {orderData.customer.city && `, ${orderData.customer.city}`}
+                  <div className="payment-display">
+                    <span className="payment-icon-large">
+                      {getPaymentMethodIcon(paymentMethod)}
                     </span>
-                  </div>
-                  {orderData.customer.note && (
-                    <div className="info-row">
-                      <span className="info-key">Ghi chú</span>
-                      <span className="info-val">{orderData.customer.note}</span>
+                    <div className="payment-details">
+                      <h4>{getPaymentMethodName(paymentMethod)}</h4>
+                      {paymentMethod === 'cod' ? (
+                        <p>Vui lòng chuẩn bị số tiền {orderData.total.toLocaleString()}₫ khi nhận hàng</p>
+                      ) : paymentConfirmed ? (
+                        <p className="payment-confirmed">✓ Đã xác nhận thanh toán thành công</p>
+                      ) : (
+                        <p className="payment-pending">⏳ Đang chờ xác nhận thanh toán</p>
+                      )}
                     </div>
-                  )}
+                  </div>
                 </div>
               </div>
+
 
               <div className="info-card">
                 <div className="card-header">
@@ -266,33 +314,39 @@ export default function OrderSuccessPage() {
                 </div>
                 <div className="card-body">
                   <div className="product-list">
-                    {orderData.items.map((item, index) => (
-                      <div key={index} className="product-item">
-                        <div className="product-image-wrapper">
-                          <img
-                            src={item.image || 'https://via.placeholder.com/100'}
-                            alt={item.name}
-                            className="product-image"
-                            onError={(e) => e.target.src = 'https://via.placeholder.com/100?text=No+Image'}
-                          />
-                          <span className="product-badge">{item.quantity}</span>
-                        </div>
-                        <div className="product-info">
-                          <h4 className="product-name">{item.name}</h4>
-                          {(item.size || item.color) && (
-                            <p className="product-attrs">
-                              {item.size && `Size: ${item.size}`}
-                              {item.size && item.color && ' • '}
-                              {item.color && `Màu: ${item.color}`}
-                            </p>
-                          )}
-                          <div className="product-pricing">
-                            <span className="product-quantity">x{item.quantity}</span>
-                            <span className="product-price">{(item.price * item.quantity).toLocaleString()}₫</span>
+                    {(Array.isArray(orderData.items) ? orderData.items : []).map((item, index) => {
+                      const qty = Number(item.quantity ?? item.qty ?? 1);
+                      const unitPrice = Number(item.price ?? item.unitPrice ?? item.amount ?? 0);
+                      const total = unitPrice * qty;
+                      return (
+                        <div key={index} className="product-item">
+                          <div className="product-image-wrapper">
+                            <img
+                              src={item.image || 'https://via.placeholder.com/100'}
+                              alt={item.name}
+                              className="product-image"
+                              onError={(e) => e.target.src = 'https://via.placeholder.com/100?text=No+Image'}
+                            />
+                            <span className="product-badge">{qty}</span>
+                          </div>
+                          <div className="product-info">
+                            <h4 className="product-name">{item.name}</h4>
+                            {(item.size || item.color) && (
+                              <p className="product-attrs">
+                                {item.size && `Size: ${item.size}`}
+                                {item.size && item.color && ' • '}
+                                {item.color && `Màu: ${item.color}`}
+                              </p>
+                            )}
+                            <div className="product-pricing">
+                              <span className="product-quantity">x{qty}</span>
+                              <span className="product-price">{total.toLocaleString()}₫</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
+
                   </div>
                 </div>
               </div>
@@ -401,7 +455,7 @@ export default function OrderSuccessPage() {
                 <div className="step-number">2</div>
                 <div className="step-icon">📦</div>
                 <h3>Chuẩn bị đơn hàng</h3>
-                <p>Ch��ng tôi đang kiểm tra và đóng gói s��n phẩm cẩn thận cho bạn</p>
+                <p>Chúng tôi đang kiểm tra và đóng gói sản phẩm cẩn thận cho bạn</p>
               </div>
               <div className="step-box">
                 <div className="step-number">3</div>

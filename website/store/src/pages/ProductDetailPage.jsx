@@ -1,3 +1,4 @@
+//src/pages/ProductDetailPage.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Layout } from "../components";
@@ -61,8 +62,8 @@ export default function ProductDetailPage() {
             const list = Array.isArray(all)
               ? all
               : Array.isArray(all?.data)
-              ? all.data
-              : [];
+                ? all.data
+                : [];
             const sameCat = list
               .filter((p) => p.id !== Number(id) && (p.category || "") === (data.category || ""))
               .slice(0, 8);
@@ -114,7 +115,7 @@ export default function ProductDetailPage() {
       const s = String(v?.attributes?.size ?? v?.size ?? "");
       const c = String(v?.attributes?.color ?? v?.color ?? "");
       return (!allSizes.length || !selectedSize || s === String(selectedSize)) &&
-             (!allColors.length || !selectedColor || c === String(selectedColor));
+        (!allColors.length || !selectedColor || c === String(selectedColor));
     });
     return byMatch || null;
   }, [variants, selectedSize, selectedColor, allSizes.length, allColors.length]);
@@ -165,6 +166,26 @@ export default function ProductDetailPage() {
       if (allSizes.length && !selectedSize) return alert("Vui lòng chọn kích thước");
       if (allColors.length && !selectedColor) return alert("Vui lòng chọn màu sắc");
     }
+
+    // --- resolve variantId an toàn (các kiểu tên khác nhau: id, _id, variantId, sku...) ---
+    const resolvedVariantId =
+      activeVariant?.id ??
+      activeVariant?._id ??
+      activeVariant?.variantId ??
+      activeVariant?.sku ?? // nếu backend dùng sku -> bạn có thể map sku -> variantId trên BE, fallback bên dưới
+      null;
+
+    // Nếu sản phẩm có variants mà không tìm được id -> cảnh báo
+    if (variants.length && !resolvedVariantId) {
+      // fallback: nếu backend chấp nhận dùng productId làm variantId cho sản phẩm không phân biến thể
+      // nhưng nếu backend yêu cầu bắt buộc variantId, hãy bật alert để người dùng chọn biến thể hoặc dev xử lý mapping trên BE.
+      console.warn("Product has variants but resolvedVariantId is null. Using product id as fallback.");
+    }
+
+    // Nếu backend của bạn **bắt buộc** variantId (như log order-service), dùng fallback = productId
+    const finalVariantId = resolvedVariantId ?? Number(id);
+
+    // Gọi addToCart: CartContext.addToCart nhận (productObject, quantity)
     addToCart(
       {
         id: Number(id),
@@ -173,10 +194,11 @@ export default function ProductDetailPage() {
         image: prod?.images?.[0] || prod?.thumbnail || placeholder,
         size: selectedSize || undefined,
         color: selectedColor || undefined,
-        variantId: activeVariant?.id,
+        // đảm bảo gửi một giá trị (number hoặc null) - tốt nhất là number
+        variantId: finalVariantId !== null ? Number(finalVariantId) : null,
         sku: activeVariant?.sku || prod?.sku || (variants.length ? variants[0]?.sku : undefined),
       },
-      quantity // ✅ truyền quantity vào tham số thứ hai
+      Number(quantity) // quantity đảm bảo là number
     );
     alert("Đã thêm sản phẩm vào giỏ hàng!");
   };
@@ -267,10 +289,10 @@ export default function ProductDetailPage() {
                     style={
                       isZoomed
                         ? {
-                            transform: "scale(2)",
-                            transformOrigin: `${zoomPosition.x}% ${zoomPosition.y}%`,
-                            cursor: "zoom-in",
-                          }
+                          transform: "scale(2)",
+                          transformOrigin: `${zoomPosition.x}% ${zoomPosition.y}%`,
+                          cursor: "zoom-in",
+                        }
                         : {}
                     }
                   />
@@ -366,9 +388,8 @@ export default function ProductDetailPage() {
                         {allColors.map((c) => (
                           <button
                             key={c}
-                            className={`color-option ${
-                              selectedColor === String(c) ? "selected" : ""
-                            }`}
+                            className={`color-option ${selectedColor === String(c) ? "selected" : ""
+                              }`}
                             onClick={() => setSelectedColor(String(c))}
                             title={String(c)}
                             aria-label={String(c)}
@@ -404,9 +425,8 @@ export default function ProductDetailPage() {
                         {allSizes.map((s) => (
                           <button
                             key={s}
-                            className={`size-option ${
-                              String(selectedSize) === String(s) ? "selected" : ""
-                            }`}
+                            className={`size-option ${String(selectedSize) === String(s) ? "selected" : ""
+                              }`}
                             onClick={() => setSelectedSize(String(s))}
                           >
                             {String(s)}
@@ -656,13 +676,13 @@ export default function ProductDetailPage() {
                       <span>
                         {formatPrice(
                           Number(item.price) ||
-                            Math.min(
-                              ...((item.variants || [])
-                                .map((v) => Number(v?.price || 0))
-                                .filter((n) => n > 0)),
-                              Infinity
-                            ) ||
-                            0
+                          Math.min(
+                            ...((item.variants || [])
+                              .map((v) => Number(v?.price || 0))
+                              .filter((n) => n > 0)),
+                            Infinity
+                          ) ||
+                          0
                         )}
                       </span>
                     </div>

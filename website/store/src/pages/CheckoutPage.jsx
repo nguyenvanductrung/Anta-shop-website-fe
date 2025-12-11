@@ -3,22 +3,15 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Layout } from '../components';
 import { useCart, useAuth, useDataSync, useUserData } from '../contexts';
-import adminService from '../services/adminService';
 import { momoPaymentService } from '../services';
-import { productService, userService, orderService } from '../services/api';
-import { generateVNPayQR, generateBankTransferQR } from '../utils/qrCodeGenerator';
+import { productService, orderService } from '../services/api';
 import './CheckoutPage.css';
-// --- Helpers: đọc profile & sổ địa chỉ từ localStorage và chuẩn hoá ---
+
 const getStoredProfile = () => {
   try {
     const raw = localStorage.getItem('anta_user_profile');
     if (!raw) return null;
-    const p = JSON.parse(raw);
-    return {
-      fullName: p.fullName || p.name || p.displayName || '',
-      email: p.email || '',
-      phoneNumber: p.phoneNumber || p.phone || '', // hỗ trợ cả phone và phoneNumber
-    };
+    return JSON.parse(raw);
   } catch {
     return null;
   }
@@ -36,7 +29,6 @@ function normalizeAddr(a) {
     isDefault: !!(a.isDefault ?? a.default ?? a.primary),
   };
 }
-
 const getStoredAddresses = () => {
   try {
     const raw = localStorage.getItem('anta_user_addresses');
@@ -52,10 +44,7 @@ export default function CheckoutPage() {
   const navigate = useNavigate();
   const { items, totalPrice, clearCart } = useCart();
   const { user } = useAuth();
-  const { profile: ctxProfile, addresses: ctxAddresses } = useUserData();
-  const dataSync = useDataSync ? (() => {
-    try { return useDataSync(); } catch { return null; }
-  })() : null;
+  const { profile: ctxProfile, addresses: ctxAddresses } = useUserData ? useUserData() : { profile: null, addresses: [] };
 
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({
@@ -75,90 +64,25 @@ export default function CheckoutPage() {
   const [appliedPromo, setAppliedPromo] = useState(null);
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // QR / Payment UI state
   const [showQRCode, setShowQRCode] = useState(false);
   const [qrData, setQrData] = useState(null);
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const [paymentProgress, setPaymentProgress] = useState(null);
-  const [momoTransactionId, setMomoTransactionId] = useState(null);
-  const paymentTimerRef = useRef(null);
 
-  // ✅ address picker
+  // waiting modal + pending ids for background check
+  const [showWaitingModal, setShowWaitingModal] = useState(false);
+  const [pendingOrderId, setPendingOrderId] = useState(null);
+  const [pendingRequestId, setPendingRequestId] = useState(null);
+
+  // variant details / addresses
+  const [variantDetails] = useState({});
   const [addresses, setAddresses] = useState([]);
   const [selectedAddress, setSelectedAddress] = useState(null);
   const [showAddressPicker, setShowAddressPicker] = useState(false);
 
-  // ✅ Helper: áp địa chỉ vào form (đặt TRONG component để dùng được setFormData)
-  const applyAddressToForm = useCallback((addr) => {
-    if (!addr) return;
-    const full = addr.detailedAddress || addr.address || '';
-    const parts = full.split(',').map(s => s.trim());
-    const base = { address: full, ward: '', district: '', city: '' };
-    if (parts.length >= 4) {
-      base.address = parts.slice(0, parts.length - 3).join(', ');
-      base.ward = parts[parts.length - 3];
-      base.district = parts[parts.length - 2];
-      base.city = parts[parts.length - 1];
-    }
-    setFormData(prev => ({
-      ...prev,
-      fullName: addr.recipientName || prev.fullName,
-      phone: addr.phoneNumber || prev.phone,
-      address: base.address,
-      ward: base.ward,
-      district: base.district,
-      city: base.city || prev.city
-    }));
-  }, []);
-
-  // ✅ Load profile + địa chỉ mặc định
-  useEffect(() => {
-    try {
-      // 1) Lấy profile: ưu tiên LocalStorage, fallback context, rồi tới user/email
-      const p = getStoredProfile();
-      setFormData(prev => ({
-        ...prev,
-        fullName: (p?.fullName ?? ctxProfile?.fullName ?? '') || '',
-        email: (p?.email ?? ctxProfile?.email ?? user?.email) || '',
-        phone: (p?.phoneNumber ?? ctxProfile?.phone ?? '') || '',
-      }));
-
-      // 2) Lấy sổ địa chỉ: ưu tiên LocalStorage, fallback context
-      let list = getStoredAddresses();
-      if ((!list || list.length === 0) && ctxAddresses?.length) {
-        list = ctxAddresses.map(normalizeAddr);
-      }
-
-      setAddresses(list);
-
-      const def = list.find(a => a.isDefault) || list[0] || null;
-      if (def) {
-        setSelectedAddress(def);
-        applyAddressToForm(def);
-      }
-    } catch (e) {
-      console.error('Error loading profile/addresses', e);
-    }
-
-    // Reload khi quay lại tab cửa sổ
-    const onFocus = () => {
-      try {
-        let list = getStoredAddresses();
-        if ((!list || list.length === 0) && ctxAddresses?.length) {
-          list = ctxAddresses.map(normalizeAddr);
-        }
-        setAddresses(list);
-        const latestDefault = list.find(a => a.isDefault) || list[0] || null;
-        if (latestDefault) {
-          setSelectedAddress(latestDefault);
-          applyAddressToForm(latestDefault);
-        }
-      } catch { }
-    };
-
-    window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
-  }, [user?.email, ctxProfile, ctxAddresses, applyAddressToForm]);
-
+  const FREE_SHIPPING_THRESHOLD = 999000;
 
   const SHIPPING_METHODS = {
     standard: { name: 'Giao hàng tiêu chuẩn', price: 30000, time: '3-5 ngày làm việc', icon: '🚚' },
@@ -180,7 +104,18 @@ export default function CheckoutPage() {
     FREESHIP: { discount: 0, type: 'freeship', description: 'Miễn phí vận chuyển', minOrder: 0 }
   };
 
-  const FREE_SHIPPING_THRESHOLD = 999000;
+  // --- helper: get userId same cách as processOrder ---
+  const getUserId = () => {
+    try {
+      const storedUser = JSON.parse(localStorage.getItem('anta_user_profile') || 'null') || {};
+      return (user && (user.id ?? user.userId)) || storedUser.id || storedUser.userId || null;
+    } catch {
+      return null;
+    }
+  };
+
+  // small utility: unwrap axios-like responses
+  const unwrap = (resp) => (resp && resp.data) ? resp.data : resp;
 
   const calculateDiscount = () => {
     if (!appliedPromo) return 0;
@@ -189,7 +124,7 @@ export default function CheckoutPage() {
     return 0;
   };
   const calculateShipping = () => {
-    if (items.length === 0) return 0;
+    if (!items || items.length === 0) return 0;
     if (appliedPromo?.type === 'freeship' || totalPrice >= FREE_SHIPPING_THRESHOLD) return 0;
     return SHIPPING_METHODS[shippingMethod]?.price || 0;
   };
@@ -198,6 +133,34 @@ export default function CheckoutPage() {
   const shipping = calculateShipping();
   const finalTotal = Math.max(0, totalPrice - discount + shipping);
 
+  // --- load profile / addresses early ---
+  useEffect(() => {
+    try {
+      const p = getStoredProfile();
+      setFormData(prev => ({
+        ...prev,
+        fullName: (p?.fullName ?? ctxProfile?.fullName ?? prev.fullName) || '',
+        email: (p?.email ?? ctxProfile?.email ?? user?.email) || prev.email,
+        phone: (p?.phoneNumber ?? ctxProfile?.phone ?? prev.phone) || prev.phone
+      }));
+
+      let list = getStoredAddresses();
+      if ((!list || list.length === 0) && ctxAddresses?.length) {
+        list = ctxAddresses.map(normalizeAddr);
+      }
+      setAddresses(list);
+      const def = list.find(a => a.isDefault) || list[0] || null;
+      if (def) {
+        setSelectedAddress(def);
+        const full = def.detailedAddress || def.address || '';
+        setFormData(prev => ({ ...prev, address: full, fullName: def.recipientName || prev.fullName, phone: def.phoneNumber || prev.phone }));
+      }
+    } catch (e) {
+      console.error('load profile/addresses error', e);
+    }
+  }, [user?.email, ctxProfile, ctxAddresses]);
+
+  // --- validations ---
   const validateField = (name, value) => {
     switch (name) {
       case 'fullName': return value.trim().length < 3 ? 'Họ tên phải có ít nhất 3 ký tự' : '';
@@ -208,7 +171,6 @@ export default function CheckoutPage() {
       default: return '';
     }
   };
-
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -231,14 +193,407 @@ export default function CheckoutPage() {
   const handleRemovePromo = () => { setAppliedPromo(null); setPromoCode(''); };
 
   const handlePaymentMethodChange = (newMethod) => {
-    const oldMethod = PAYMENT_METHODS.find(m => m.id === paymentMethod);
-    const newMethodObj = PAYMENT_METHODS.find(m => m.id === newMethod);
+    if (newMethod === 'bank' || newMethod === 'vnpay') {
+      alert('Phương thức đang bảo trì, vui lòng chọn phương thức khác.');
+      return;
+    }
     setPaymentMethod(newMethod);
-    if (oldMethod?.requireQR && !newMethodObj?.requireQR) {
-      setQrData(null); setPaymentConfirmed(false); setShowQRCode(false);
+    if (newMethod !== 'momo') {
+      setShowQRCode(false);
+      setQrData(null);
+      setPaymentProgress(null);
     }
   };
 
+  const saveOrderToLocalStorage = (orderData) => {
+    try {
+      const userOrdersKey = 'anta_user_orders';
+      const userOrders = JSON.parse(localStorage.getItem(userOrdersKey) || '[]');
+      const orderRecord = {
+        id: orderData.orderNumber || orderData.id || orderData.orderId,
+        orderNumber: orderData.orderNumber || orderData.orderId || orderData.code || null,
+        date: orderData.date || new Date().toISOString(),
+        status: orderData.status || 'Đang xử lý',
+        paymentMethod,
+        total: orderData.total ?? orderData.amount ?? finalTotal,
+        products: orderData.items || orderData.products || [],
+      };
+      userOrders.unshift(orderRecord);
+      localStorage.setItem(userOrdersKey, JSON.stringify(userOrders));
+      localStorage.setItem('latest_order', JSON.stringify(orderRecord));
+      return true;
+    } catch (e) { console.error('saveOrderToLocalStorage error', e); return false; }
+  };
+
+  // --- wait for order-service to report PAID (poll) ---
+  const waitForOrderPaid = async (orderId, timeoutMs = 60000) => {
+    if (!orderId) return false;
+    const start = Date.now();
+    const checkInterval = 2000;
+    while (Date.now() - start < timeoutMs) {
+      try {
+        const oResp = await orderService.getOrder(orderId);
+        const o = unwrap(oResp);
+        const s = (o?.status || '').toString().toUpperCase();
+        if (['PAID', 'COMPLETED', 'CONFIRMED'].includes(s)) {
+          return true;
+        }
+      } catch (e) {
+        // ignore and retry
+      }
+      // wait
+      await new Promise(r => setTimeout(r, checkInterval));
+    }
+    return false;
+  };
+
+  // --- Create QR / start MoMo flow ---
+  const generateQRCodeForPayment = async () => {
+    setIsSubmitting(true);
+    setPaymentProgress({ status: 'creating-order' });
+    try {
+      const orderNumber = `ANT${Date.now().toString().slice(-8)}`;
+      const normalizedItems = items.map(it => ({
+        productId: it.productId ?? it.product,
+        variantId: it.variantId ?? null,
+        quantity: Number(it.quantity ?? it.qty ?? 1),
+        price: Number(it.price ?? 0)
+      }));
+
+      // include userId when creating order so backend saves user_id (important)
+      const userId = getUserId();
+
+      const orderPayload = {
+        orderNumber,
+        items: normalizedItems,
+        total: Math.round(finalTotal),
+        paymentMethod: 'MOMO',
+        userId: userId ? Number(userId) : null, // << add userId here
+        customer: {
+          fullName: formData.fullName,
+          email: formData.email,
+          phone: formData.phone,
+        }
+      };
+
+      const orderRespRaw = await orderService.createOrder(orderPayload);
+      const orderResp = unwrap(orderRespRaw);
+      const orderId = orderResp?.orderId ?? orderResp?.id ?? orderResp?.order_id ?? null;
+      const serverTotal = orderResp?.total ?? orderResp?.amount ?? Math.round(finalTotal);
+
+      if (!orderId) {
+        throw new Error('Không nhận được orderId từ order-service');
+      }
+
+      saveOrderToLocalStorage(orderResp);
+      setPaymentProgress({ status: 'creating-payment' });
+
+      // ensure numeric amount
+      let amountToSend = Number(serverTotal ?? Math.round(finalTotal));
+      if (!amountToSend || Number.isNaN(amountToSend)) amountToSend = Math.round(finalTotal);
+
+      const paymentReqPayload = {
+        orderId,
+        amount: amountToSend,
+        userId: userId ?? undefined,
+        orderNumber
+      };
+
+      const paymentResp = await momoPaymentService.createPaymentRequest(paymentReqPayload);
+
+      if (!paymentResp || paymentResp.success === false) {
+        console.error('createPaymentRequest failed', paymentResp);
+        const backendMsg = (paymentResp && (paymentResp.error || paymentResp.raw)) || 'Unknown error';
+        throw new Error(String(backendMsg));
+      }
+
+      const data = paymentResp.data || {};
+      // if backend returned payUrl -> open tab and show waiting modal
+      if (data.payUrl) {
+        setQrData({ payUrl: data.payUrl, requestId: data.requestId || null, amount: amountToSend, orderId });
+        setPendingOrderId(orderId);
+        setPendingRequestId(data.requestId || null);
+        setShowWaitingModal(true);
+        // open payment in new tab
+        window.open(data.payUrl, '_blank');
+        setPaymentProgress({ status: 'waiting-payment', orderId });
+        // start background check: wait for order-service to mark paid before navigate
+        momoPaymentService.autoProcessPayment(data.requestId, orderId, (p) => setPaymentProgress(p), { timeout: 120000 })
+          .then(async (r) => {
+            // even if r.success, confirm by polling order-service
+            const paid = await waitForOrderPaid(orderId, 60000);
+            if (paid) {
+              setPaymentConfirmed(true);
+              clearCart();
+              const oResp = unwrap(await orderService.getOrder(orderId));
+              navigate('/order-success', { state: { orderData: oResp, paymentConfirmed: true } });
+            } else {
+              // not yet paid — keep waiting modal open and show message
+              setPaymentProgress({ status: 'pending', message: 'Chờ hệ thống cập nhật trạng thái đơn' });
+            }
+          }).catch(err => {
+            console.warn('autoProcessPayment error', err);
+            setPaymentProgress({ status: 'pending', message: 'Chờ hệ thống cập nhật trạng thái đơn' });
+          }).finally(() => setIsSubmitting(false));
+        return;
+      }
+
+      // if backend returned only requestId -> show waiting and poll
+      if (data.requestId) {
+        setQrData({ payUrl: null, requestId: data.requestId, amount: amountToSend, orderId });
+        setPendingOrderId(orderId);
+        setPendingRequestId(data.requestId);
+        setShowWaitingModal(true);
+        // background poll then confirm order-service
+        momoPaymentService.autoProcessPayment(data.requestId, orderId, (p) => setPaymentProgress(p), { timeout: 120000 })
+          .then(async (r) => {
+            const paid = await waitForOrderPaid(orderId, 60000);
+            if (paid) {
+              setPaymentConfirmed(true);
+              clearCart();
+              const oResp = unwrap(await orderService.getOrder(orderId));
+              navigate('/order-success', { state: { orderData: oResp, paymentConfirmed: true } });
+            } else {
+              setPaymentProgress({ status: 'pending', message: 'Chờ cập nhật' });
+            }
+          }).catch(err => {
+            console.warn('autoProcessPayment error', err);
+            setPaymentProgress({ status: 'pending', message: 'Chờ cập nhật' });
+          }).finally(() => setIsSubmitting(false));
+        return;
+      }
+
+      throw new Error('Payment service không trả payUrl hay requestId');
+    } catch (err) {
+      console.error('generateQRCodeForPayment error', err);
+      alert('Không thể khởi tạo thanh toán MoMo: ' + (err?.message || err));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // --- When user manually clicks "Xác nhận đã thanh toán" in QR modal ---
+  const handleConfirmPayment = async () => {
+    setIsSubmitting(true);
+    try {
+      if (!qrData?.requestId && !pendingRequestId) {
+        alert('Không có requestId để kiểm tra. Vui lòng thử lại hoặc liên hệ hỗ trợ.');
+        setIsSubmitting(false);
+        return;
+      }
+      const rid = qrData?.requestId || pendingRequestId;
+      const res = await momoPaymentService.getPaymentDetails(rid);
+      const data = res?.data || {};
+      const rawStatus = (data.status || data.result || data.paymentStatus || data.resultCode || '').toString().toUpperCase();
+      const isSuccess = res?.success && (['SUCCESS', 'PAID', 'COMPLETED', '0'].includes(rawStatus) || (data.resultCode !== undefined && Number(data.resultCode) === 0));
+      if (isSuccess) {
+        // confirm with order-service
+        const paid = await waitForOrderPaid(pendingOrderId, 60000);
+        if (paid) {
+          setPaymentConfirmed(true);
+          clearCart();
+          const oResp = unwrap(await orderService.getOrder(pendingOrderId));
+          navigate('/order-success', { state: { orderData: oResp, paymentConfirmed: true } });
+        } else {
+          alert('Thanh toán đã được ghi nhận ở payment-service nhưng đơn hàng chưa được cập nhật. Vui lòng chờ hoặc liên hệ hỗ trợ.');
+        }
+      } else {
+        alert('Thanh toán chưa xác thực. Vui lòng thử lại hoặc chờ hệ thống cập nhật.');
+      }
+    } catch (err) {
+      console.warn('Manual MoMo payment check failed', err);
+      alert('Không thể kiểm tra trạng thái lúc này. Vui lòng thử lại sau.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // --- create order for COD ---
+  const createOrderForCOD = async () => {
+    setIsSubmitting(true);
+    try {
+      const storedUser = JSON.parse(localStorage.getItem('anta_user_profile') || 'null') || {};
+      const userId = (user && (user.id ?? user.userId)) || storedUser.id || null;
+
+      const normalizedItems = items.map(it => ({
+        productId: it.productId ?? it.product,
+        variantId: it.variantId ?? null,
+        quantity: Number(it.quantity ?? it.qty ?? 1),
+        size: it.size ?? null,
+        color: it.color ?? null,
+      }));
+
+      const shippingAddress = `${formData.address || ''}${formData.ward ? ', ' + formData.ward : ''}${formData.district ? ', ' + formData.district : ''}${formData.city ? ', ' + formData.city : ''}`;
+
+      const payload = {
+        userId: userId ? Number(userId) : null,
+        items: normalizedItems,
+        shippingAddress,
+        paymentMethod: 'COD',
+      };
+
+      const respRaw = await orderService.createOrder(payload);
+      const resp = unwrap(respRaw);
+      saveOrderToLocalStorage(resp);
+      clearCart();
+      navigate('/order-success', { state: { orderData: resp } });
+    } catch (err) {
+      console.error('createOrderForCOD error', err);
+      alert('Không thể tạo đơn COD. Vui lòng thử lại.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // --- submit handler ---
+  const handlePlaceOrder = async (e) => {
+    e.preventDefault();
+    // validate
+    const newErrors = {
+      fullName: validateField('fullName', formData.fullName),
+      phone: validateField('phone', formData.phone),
+      email: validateField('email', formData.email),
+      address: validateField('address', formData.address),
+    };
+    setErrors(newErrors);
+    if (Object.values(newErrors).some(Boolean)) {
+      setCurrentStep(1);
+      alert('Vui lòng kiểm tra lại thông tin giao hàng');
+      return;
+    }
+    if (!items || items.length === 0) {
+      alert('Giỏ hàng trống');
+      return;
+    }
+
+    // determine selected method (also handle DOM case where state lag)
+    const domChecked = (document.querySelector('input[name="payment"]:checked') || {});
+    const selectedMethodId = domChecked.value || paymentMethod;
+    if (selectedMethodId === 'bank' || selectedMethodId === 'vnpay') {
+      alert('Phương thức đang bảo trì, vui lòng chọn phương thức khác.');
+      return;
+    }
+
+    // COD => create order and go to success immediately
+    if (selectedMethodId === 'cod') {
+      await createOrderForCOD();
+      return;
+    }
+
+    // QR methods
+    const selectedMethod = PAYMENT_METHODS.find(m => m.id === selectedMethodId);
+    if (selectedMethod?.requireQR) {
+      await generateQRCodeForPayment();
+      return;
+    }
+
+    // fallback
+    await createOrderForCOD();
+  };
+
+  // --- When user returns to this tab (focus or visibility change), check pending payment if any ---
+  useEffect(() => {
+    let mounted = true;
+    const checkPending = async () => {
+      try {
+        if (!mounted) return;
+        const rid = pendingRequestId;
+        if (!rid) return;
+        const res = await momoPaymentService.getPaymentStatus(rid);
+        if (res && res.success && res.data) {
+          const statusRaw = (res.data.status || res.data.result || res.data.resultCode || '').toString().toUpperCase();
+          if (['SUCCESS', 'PAID', 'COMPLETED', '0'].includes(statusRaw) || (res.data.resultCode !== undefined && Number(res.data.resultCode) === 0)) {
+            // confirm via order-service
+            const paid = await waitForOrderPaid(pendingOrderId, 60000);
+            if (paid) {
+              try { if (pendingOrderId) await orderService.updatePayment(pendingOrderId, 'SUCCESS'); } catch (_) { /* ignore */ }
+              clearCart();
+              const oResp = unwrap(await orderService.getOrder(pendingOrderId));
+              navigate('/order-success', { state: { orderData: oResp, paymentConfirmed: true } });
+            } else {
+              setPaymentProgress({ status: 'pending', raw: res.data });
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('checkPending error', err);
+      }
+    };
+
+    const onFocus = () => {
+      checkPending();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) checkPending(); });
+
+    return () => { mounted = false; window.removeEventListener('focus', onFocus); };
+  }, [pendingRequestId, pendingOrderId, navigate, clearCart]);
+
+  // --- message listener (from momo-return page) ---
+  useEffect(() => {
+    const handler = async (e) => {
+      try {
+        if (e.origin !== window.location.origin) {
+          // dev envs might differ - relax if needed
+        }
+      } catch (err) { /* ignore */ }
+      const d = e.data || {};
+      if (d && d.type === 'MOMO_REDIRECT') {
+        const { orderId, requestId, resultCode } = d;
+        setShowWaitingModal(false);
+        setQrData(null);
+        setPaymentProgress({ status: 'redirect_received', orderId, requestId, resultCode });
+
+        const successValues = ['0', 0, 'SUCCESS', 'PAID', 'COMPLETED'];
+        if (successValues.includes(resultCode)) {
+          try {
+            // wait for order-service to confirm
+            const paid = await waitForOrderPaid(orderId ?? pendingOrderId, 60000);
+            if (paid) {
+              try { if (orderId) await orderService.updatePayment(orderId, 'SUCCESS'); } catch (_) {}
+              const o = unwrap(await orderService.getOrder(orderId ?? pendingOrderId));
+              clearCart();
+              navigate('/order-success', { state: { orderData: o, paymentConfirmed: true } });
+              return;
+            } else {
+              alert('Thanh toán thành công ở payment-service nhưng đơn hàng chưa cập nhật. Hệ thống sẽ tiếp tục kiểm tra. Nếu lâu bạn hãy liên hệ hỗ trợ.');
+              setShowWaitingModal(true);
+              setPendingOrderId(orderId ?? pendingOrderId);
+              setPendingRequestId(requestId ?? pendingRequestId);
+              setPaymentProgress({ status: 'waiting_for_order_update' });
+              return;
+            }
+          } catch (err) {
+            console.error('Failed to mark order paid after redirect', err);
+            alert('Thanh toán có vẻ thành công nhưng hệ thống chưa cập nhật được. Vui lòng kiểm tra đơn hàng hoặc liên hệ hỗ trợ.');
+            return;
+          }
+        } else {
+          alert('Thanh toán không thành công (MoMo trả về). Vui lòng thử lại hoặc chọn cách thanh toán khác.');
+        }
+      }
+    };
+
+    window.addEventListener('message', handler);
+
+    const storageHandler = (e) => {
+      if (e.key === 'MOMO_REDIRECT_RESULT') {
+        try {
+          const d = JSON.parse(localStorage.getItem('MOMO_REDIRECT_RESULT'));
+          window.postMessage(d, window.location.origin);
+          localStorage.removeItem('MOMO_REDIRECT_RESULT');
+        } catch { }
+      }
+    };
+    window.addEventListener('storage', storageHandler);
+
+    return () => {
+      window.removeEventListener('message', handler);
+      window.removeEventListener('storage', storageHandler);
+    };
+  }, [pendingOrderId, pendingRequestId, clearCart, navigate]);
+
+  // UI helpers
   const validateStep1 = () => {
     const newErrors = {
       fullName: validateField('fullName', formData.fullName),
@@ -246,21 +601,12 @@ export default function CheckoutPage() {
       email: validateField('email', formData.email),
       address: validateField('address', formData.address),
     };
-
-    if (formData.city && formData.city !== '') {
-      newErrors.city = validateField('city', formData.city);
-    } else {
-      newErrors.city = '';
-    }
-
     setErrors(newErrors);
-
     const firstErrKey = Object.keys(newErrors).find(k => newErrors[k]);
     if (firstErrKey) {
       const el = document.querySelector(`[name="${firstErrKey}"]`);
       if (el) el.focus();
     }
-
     return !Object.values(newErrors).some(Boolean);
   };
 
@@ -279,298 +625,12 @@ export default function CheckoutPage() {
   };
   const handlePrevStep = () => { if (currentStep > 1) { setCurrentStep(currentStep - 1); window.scrollTo({ top: 0, behavior: 'smooth' }); } };
 
-  const saveOrderToLocalStorage = (orderData) => {
-    try {
-      const userOrdersKey = 'anta_user_orders';
-      const userOrders = JSON.parse(localStorage.getItem(userOrdersKey) || '[]');
-      const selectedMethod = PAYMENT_METHODS.find(m => m.id === paymentMethod);
-      const isQRPayment = selectedMethod?.requireQR;
-      const orderRecord = {
-        id: orderData.orderNumber || orderData.id,
-        orderNumber: orderData.orderNumber,
-        date: orderData.date || new Date().toISOString(),
-        createdAt: orderData.orderDate || new Date().toISOString(),
-        status: 'Đang xử lý',
-        paymentStatus: paymentMethod === 'cod' ? 'Chưa thanh toán' : (isQRPayment && paymentConfirmed ? 'Đã thanh toán' : 'Chờ xác nhận'),
-        paymentMethod,
-        paymentConfirmed,
-        total: orderData.total,
-        totalAmount: orderData.total,
-        items: orderData.products?.length || orderData.items?.length,
-        totalItems: orderData.products?.length || orderData.items?.length,
-        image: orderData.items?.[0]?.image || orderData.products?.[0]?.image || 'https://via.placeholder.com/400',
-        customer: orderData.customer,
-        products: orderData.products || (orderData.items?.map(item => ({
-          id: item.id, name: item.name, image: item.image, price: item.price, quantity: item.quantity, size: item.size, color: item.color
-        })) || []),
-        subtotal: orderData.subtotal,
-        discount: orderData.discount,
-        shipping: orderData.shipping,
-        promoCode: orderData.promoCode
-      };
-      userOrders.unshift(orderRecord);
-      localStorage.setItem(userOrdersKey, JSON.stringify(userOrders));
-      localStorage.setItem('latest_order', JSON.stringify(orderRecord));
-      return true;
-    } catch (e) { console.error('saveOrderToLocalStorage error', e); return false; }
-  };
+  const handleCancelQR = useCallback(() => {
+    setShowQRCode(false);
+    // keep pendingRequestId so user can confirm later
+  }, []);
 
-  // Generate QR (kept as-is mostly)
-  // inside component
-  // (inside CheckoutPage) - replace generateQRCodeForPayment with this version
-  const generateQRCodeForPayment = async () => {
-    const orderNumber = `ANT${Date.now().toString().slice(-8)}`;
-
-    // 1) build normalized items
-    const normalizedItems = items.map(it => ({
-      productId: Number(it.productId ?? it.id ?? null),
-      variantId: Number(it.variantId ?? it.variant?.id ?? null),
-      quantity: Number(it.quantity ?? it.qty ?? 1),
-      price: Number(it.price ?? 0)
-    }));
-
-    const shippingAddress = `${formData.address || ''}${formData.ward ? ', ' + formData.ward : ''}${formData.district ? ', ' + formData.district : ''}${formData.city ? ', ' + formData.city : ''}`;
-
-    const orderPayload = {
-      orderNumber,
-      userId: (user && user.id) || (JSON.parse(localStorage.getItem('anta_user_profile') || 'null')?.id) || null,
-      items: normalizedItems,
-      shippingAddress,
-      subtotal: totalPrice,
-      discount,
-      shipping,
-      total: finalTotal,
-      paymentMethod: 'MOMO', // cho order record
-      shippingMethod,
-      customer: {
-        fullName: formData.fullName,
-        email: formData.email,
-        phone: formData.phone
-      }
-    };
-
-    setPaymentProgress({ status: 'creating-order' });
-
-    // 2) create order on order-service (should persist to MySQL and return orderId)
-    let orderResp;
-    try {
-      orderResp = await orderService.createOrder(orderPayload);
-    } catch (err) {
-      setPaymentProgress({ status: 'failed', message: 'Không tạo được đơn hàng: ' + (err?.message || err) });
-      console.error('createOrder failed', err);
-      return;
-    }
-
-    // Ensure orderResp contains orderId and total (adjust based on your order-service response shape)
-    const orderId = orderResp?.orderId ?? orderResp?.id ?? orderResp?.data?.orderId;
-    const serverTotal = orderResp?.total ?? orderResp?.data?.total ?? orderPayload.total;
-
-    if (!orderId) {
-      setPaymentProgress({ status: 'failed', message: 'Server không trả về orderId' });
-      console.error('order creation response', orderResp);
-      return;
-    }
-
-    setPaymentProgress({ status: 'created-order', orderId });
-
-    // 3) call payment-service to create MoMo request with the real orderId and amount
-    setPaymentProgress({ status: 'creating-payment' });
-    const paymentReqPayload = { orderId, userId: orderPayload.userId, amount: serverTotal };
-
-    const resp = await momoPaymentService.createPaymentRequest(paymentReqPayload);
-    if (!resp.success) {
-      setPaymentProgress({ status: 'failed', message: resp.error || 'Không tạo được yêu cầu thanh toán' });
-      // Optionally update order status to FAILED/ CANCELLED via orderService if desired
-      return;
-    }
-
-    const data = resp.data || {};
-
-    // Build qrCodeUrl (choose whichever the backend returns)
-    let qrCodeUrl = null;
-    if (data.qrImageBase64) qrCodeUrl = `data:image/png;base64,${data.qrImageBase64}`;
-    else if (data.qrCodeUrl) qrCodeUrl = data.qrCodeUrl;
-    else if (data.deeplink) qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(data.deeplink)}`;
-    else if (data.payUrl) qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(data.payUrl)}`;
-
-    if (!qrCodeUrl) {
-      setPaymentProgress({ status: 'failed', message: 'Provider không trả về QR hoặc payUrl' });
-      return;
-    }
-
-    setQrData({
-      transactionId: data.transactionId || data.requestId || data.orderId,
-      requestId: data.requestId || null,
-      orderId,
-      qrCodeUrl,
-      qrContent: data.deeplink || data.payUrl || null,
-      amount: data.amount ?? serverTotal,
-      orderNumber
-    });
-
-    setMomoTransactionId(data.requestId || data.transactionId || null);
-    setShowQRCode(true);
-    setPaymentProgress(null);
-
-    // 4) optionally: start polling backend for order status (in Background)
-    momoPaymentService.autoProcessPayment(data.requestId || data.transactionId || data.requestId || data.orderId, (p) => setPaymentProgress(p), { interval: 3000, timeout: 120000 })
-      .then(result => {
-        if (result.success) {
-          setPaymentConfirmed(true);
-          // finalize local UI and clear cart
-          clearCart();
-          navigate('/order-success', { state: { orderId, orderData: orderResp } });
-        } else {
-          // timeout or failed -> user will confirm manually or check order
-          console.warn('momo auto poll ended', result);
-        }
-      }).catch(err => console.warn('autoProcessPayment error', err));
-  };
-
-
-  const startMoMoSimulation = async (transactionId) => {
-    try {
-      const result = await momoPaymentService.autoProcessPayment(transactionId, setPaymentProgress);
-      if (result.success) {
-        setTimeout(() => {
-          setPaymentConfirmed(true);
-          setPaymentProgress({ status: 'success', message: 'Thanh toán thành công!' });
-          setTimeout(() => { setShowQRCode(false); processOrder(); }, 1500);
-        }, 500);
-      } else {
-        setPaymentProgress({ status: 'failed', message: result.error || 'Thanh toán thất bại. Vui lòng thử lại.' });
-      }
-    } catch (err) {
-      setPaymentProgress({ status: 'failed', message: err?.message || 'Lỗi thanh toán' });
-    }
-  };
-
-  const handleConfirmPayment = async () => { setPaymentConfirmed(true); setShowQRCode(false); await processOrder(); };
-  const handleCancelQR = () => {
-    if (momoTransactionId && paymentMethod === 'momo') momoPaymentService.cancelPayment?.(momoTransactionId);
-    if (paymentTimerRef.current) clearTimeout(paymentTimerRef.current);
-    setPaymentProgress(null); setShowQRCode(false);
-  };
-
-  // --- CHÍNH: processOrder dùng adminService.orders.createOrder và ensure mỗi item có image ---
-  // NEW: processOrder thực tế -> gọi order-service, xử lý MoMo (mở payUrl) và poll trạng thái order
-  const processOrder = async () => {
-    setIsSubmitting(true);
-    try {
-      // xác định userId từ context / localStorage
-      const storedUser = JSON.parse(localStorage.getItem('anta_user_profile') || 'null') || {};
-      const userId = (user && user.id) || storedUser.id || null;
-
-      // chuẩn hoá items theo backend: variantId bắt buộc
-      const normalizedItems = await Promise.all(items.map(async (it) => {
-        // backend expects: { productId, variantId, quantity, note? }
-        // try find variantId from item.variantId or item.id if that's variant
-        const variantId = it.variantId ?? it.id ?? it.variant?.id ?? null;
-        const productId = it.productId ?? it.id ?? null;
-        return {
-          productId: productId ? Number(productId) : null,
-          variantId: variantId ? Number(variantId) : null,
-          quantity: Number(it.quantity || it.qty || 1),
-          note: it.note || undefined,
-        };
-      }));
-
-      // shippingAddress: compose string from form
-      const shippingAddress = `${formData.address || ''}${formData.ward ? ', ' + formData.ward : ''}${formData.district ? ', ' + formData.district : ''}${formData.city ? ', ' + formData.city : ''}`;
-
-      const payload = {
-        userId: userId ? Number(userId) : null,
-        items: normalizedItems,
-        shippingAddress: shippingAddress,
-        paymentMethod: paymentMethod === 'momo' ? 'MOMO' : (paymentMethod === 'vnpay' ? 'VNPAY' : (paymentMethod === 'bank' ? 'BANK_TRANSFER' : 'COD')),
-      };
-
-      // Call order-service (this will create order row in MySQL via backend)
-      const resp = await orderService.createOrder(payload);
-      // resp expected shape: { orderId, status, payUrl }
-      // if resp contains payUrl (MoMo), open it in new tab for user
-      if (resp && resp.payUrl) {
-        // open payment link in new tab/window
-        window.open(resp.payUrl, "_blank");
-      }
-
-      // poll order status until PAID/FAILED/CANCELLED (backend must persist and update when IPN)
-      if (resp && resp.orderId) {
-        const pollResult = await (async function pollOrderStatus(orderId) {
-          let tries = 0;
-          const maxTries = 60; // up to e.g. 2 minutes (60 * 2s)
-          let delayMs = 2000;
-          while (tries < maxTries) {
-            try {
-              const o = await orderService.getOrder(orderId);
-              // o.status should be like 'PENDING_PAYMENT', 'PAID', 'FAILED' ...
-              const s = (o?.status || '').toUpperCase();
-              if (s === 'PAID' || s === 'DELIVERED' || s === 'CONFIRMED') {
-                return { ok: true, order: o };
-              }
-              if (s === 'FAILED' || s === 'CANCELLED') {
-                return { ok: false, order: o };
-              }
-            } catch (err) {
-              // ignore read errors, continue polling
-              console.warn('pollOrderStatus error', err);
-            }
-            // wait and retry
-            await new Promise(r => setTimeout(r, delayMs));
-            tries++;
-            // backoff (but cap)
-            if (delayMs < 10000) delayMs = Math.min(10000, delayMs + 1000);
-          }
-          return { ok: null, order: null };
-        })(resp.orderId);
-
-        // handle poll result
-        if (pollResult.ok === true) {
-          // paid
-          saveOrderToLocalStorage(pollResult.order || resp);
-          clearCart();
-          navigate('/order-success', { state: { orderData: pollResult.order || resp } });
-          return;
-        } else if (pollResult.ok === false) {
-          // payment failed/cancelled
-          saveOrderToLocalStorage(pollResult.order || resp);
-          alert('Thanh toán không thành công. Vui lòng thử lại hoặc chọn phương thức khác.');
-          navigate('/order-failed', { state: { orderData: pollResult.order || resp } });
-          return;
-        } else {
-          // timed out
-          saveOrderToLocalStorage(resp);
-          alert('Đơn hàng đã được tạo. Vui lòng kiểm tra trạng thái đơn hàng sau hoặc liên hệ hỗ trợ.');
-          navigate('/order-success', { state: { orderData: resp } });
-          return;
-        }
-      } else {
-        // no orderId returned -> treat as error
-        throw new Error('Không nhận được orderId từ server');
-      }
-    } catch (err) {
-      console.error('Error placing order (real):', err);
-      alert('Có lỗi xảy ra khi đặt hàng: ' + (err?.message || err));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-
-  const handlePlaceOrder = async (e) => {
-    e.preventDefault();
-    if (!validateStep1()) { setCurrentStep(1); alert('Vui lòng kiểm tra lại thông tin giao hàng'); return; }
-    if (!items || items.length === 0) { alert('Giỏ hàng trống'); return; }
-
-
-    const selectedMethod = PAYMENT_METHODS.find(m => m.id === paymentMethod);
-    if (selectedMethod?.requireQR && !qrData) { generateQRCodeForPayment(); return; }
-    if (selectedMethod?.requireQR && !paymentConfirmed) { alert('Vui lòng quét mã QR và xác nhận thanh toán trước khi hoàn tất đơn hàng'); setShowQRCode(true); return; }
-
-    await processOrder();
-  };
-
-  if (items.length === 0) {
+  if (!items || items.length === 0) {
     return (
       <Layout>
         <div className="checkout-page">
@@ -587,6 +647,7 @@ export default function CheckoutPage() {
     );
   }
 
+  // --- JSX (kept your original layout) ---
   return (
     <Layout>
       <div className="checkout-page">
@@ -599,6 +660,31 @@ export default function CheckoutPage() {
             <span className="breadcrumb-current">Thanh toán</span>
           </div>
         </div>
+
+        {/* Waiting Modal */}
+               {/* Waiting Modal */}
+        {showWaitingModal && (
+          <div className="qr-modal-overlay waiting-overlay" onClick={() => { /* prevent close */ }}>
+            <div className="qr-modal waiting-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="waiting-inner">
+                <div className="waiting-spinner" role="status" aria-label="Đang chờ thanh toán"></div>
+                <h3 style={{ marginTop: 16 }}>Đang chờ thanh toán</h3>
+                <p style={{ marginTop: 8, color: '#666' }}>Vui lòng hoàn tất thanh toán trong trang đã mở. Sau khi hoàn tất, quay lại tab này để hệ thống xác nhận đơn.</p>
+
+                <div style={{ marginTop: 18, display: 'flex', gap: 8, justifyContent: 'center' }}>
+                  <button className="btn-secondary" onClick={() => { if (qrData?.payUrl) window.open(qrData.payUrl, '_blank'); }}>Mở lại trang thanh toán</button>
+                  <button className="btn-link" onClick={() => { setShowWaitingModal(false); setShowQRCode(true); }}>Đã thanh toán? Kiểm tra</button>
+                </div>
+
+                <div style={{ marginTop: 14, fontSize: 13, color: '#888' }}>
+                  <div>Mã đơn: <strong style={{ color: '#222' }}>{pendingOrderId}</strong></div>
+                  <div style={{ marginTop: 6 }}>Trạng thái: <strong style={{ color: '#222' }}>{paymentProgress?.status || 'Chờ thanh toán'}</strong></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
 
         <div className="checkout-header">
           <div className="container">
@@ -630,7 +716,6 @@ export default function CheckoutPage() {
                   {currentStep === 1 && (
                     <div className="checkout-section active">
                       <h2 className="section-title">Thông tin giao hàng</h2>
-
                       <div className="selected-address-card">
                         <div className="sel-left">
                           <div className="sel-title">Địa chỉ nhận hàng</div>
@@ -638,10 +723,7 @@ export default function CheckoutPage() {
                             <>
                               <div className="sel-name">{selectedAddress.recipientName}</div>
                               <div className="sel-phone">{selectedAddress.phoneNumber || selectedAddress.phone}</div>
-                              <div className="sel-addr">
-                                {(selectedAddress.detailedAddress || selectedAddress.address)}
-                                {selectedAddress.country ? `, ${selectedAddress.country}` : ''}
-                              </div>
+                              <div className="sel-addr">{(selectedAddress.detailedAddress || selectedAddress.address)}{selectedAddress.country ? `, ${selectedAddress.country}` : ''}</div>
                               {selectedAddress.isDefault && <span className="badge-default">Mặc định</span>}
                             </>
                           ) : (
@@ -681,7 +763,7 @@ export default function CheckoutPage() {
 
                         <div className="form-group full-width">
                           <label htmlFor="note">Ghi chú đơn hàng</label>
-                          <textarea id="note" name="note" value={formData.note} onChange={handleInputChange} placeholder="Ghi chú về đơn hàng, ví dụ: thời gian giao hàng mong muốn..." rows="3" maxLength="500" />
+                          <textarea id="note" name="note" value={formData.note} onChange={handleInputChange} placeholder="Ghi chú về đơn hàng..." rows="3" maxLength="500" />
                           <span className="char-count">{formData.note.length}/500</span>
                         </div>
                       </div>
@@ -713,13 +795,6 @@ export default function CheckoutPage() {
                           </label>
                         ))}
                       </div>
-
-                      {totalPrice < FREE_SHIPPING_THRESHOLD && (
-                        <div className="shipping-notice">
-                          <span className="notice-icon">💡</span>
-                          <span>Mua thêm <strong>{(FREE_SHIPPING_THRESHOLD - totalPrice).toLocaleString()}₫</strong> để được miễn phí vận chuyển</span>
-                        </div>
-                      )}
 
                       <div className="step-actions">
                         <button type="button" className="btn-secondary" onClick={handlePrevStep}>← Quay lại</button>
@@ -753,9 +828,7 @@ export default function CheckoutPage() {
                         <div className="review-item"><span className="review-label">Số điện thoại:</span><span className="review-value">{formData.phone}</span></div>
                         <div className="review-item">
                           <span className="review-label">Địa chỉ:</span>
-                          <span className="review-value">
-                            {formData.address}, {formData.ward && `${formData.ward}, `}{formData.district && `${formData.district}, `}{formData.city}
-                          </span>
+                          <span className="review-value">{formData.address}{formData.ward ? `, ${formData.ward}` : ''}{formData.district ? `, ${formData.district}` : ''}{formData.city ? `, ${formData.city}` : ''}</span>
                         </div>
                         <div className="review-item"><span className="review-label">Vận chuyển:</span><span className="review-value">{SHIPPING_METHODS[shippingMethod]?.name}</span></div>
                         <div className="review-item"><span className="review-label">Thanh toán:</span><span className="review-value">{PAYMENT_METHODS.find(m => m.id === paymentMethod)?.name}</span></div>
@@ -776,12 +849,8 @@ export default function CheckoutPage() {
 
                       <div className="step-actions">
                         <button type="button" className="btn-secondary" onClick={handlePrevStep}>← Quay lại</button>
-                        <button
-                          type="submit"
-                          className="btn-primary btn-place-order"
-                          disabled={isSubmitting || (PAYMENT_METHODS.find(m => m.id === paymentMethod)?.requireQR && qrData && !paymentConfirmed)}
-                        >
-                          {isSubmitting ? 'Đang xử lý...' : (PAYMENT_METHODS.find(m => m.id === paymentMethod)?.requireQR ? (paymentConfirmed ? 'Hoàn tất đơn hàng' : 'Tiếp tục thanh toán') : 'Đặt hàng')}
+                        <button type="submit" className="btn-primary btn-place-order" disabled={isSubmitting}>
+                          {isSubmitting ? 'Đang xử lý...' : (PAYMENT_METHODS.find(m => m.id === paymentMethod)?.requireQR ? 'Tiếp tục thanh toán' : 'Đặt hàng')}
                         </button>
                       </div>
                     </div>
@@ -792,27 +861,28 @@ export default function CheckoutPage() {
               <div className="checkout-sidebar">
                 <div className="order-summary">
                   <h3 className="summary-title">Đơn hàng của bạn</h3>
-
                   <div className="order-items">
-                    {items.map((item, index) => (
-                      <div key={`${item.id}-${item.size}-${item.color}-${index}`} className="summary-item">
-                        <div className="item-image-wrapper">
-                          <img src={item.image || 'https://via.placeholder.com/80'} alt={item.name} onError={(e) => e.target.src = 'https://via.placeholder.com/80?text=No+Image'} />
-                          <span className="item-qty">{item.quantity}</span>
+                    {items.map((item, index) => {
+                      const vid = item.variantId ?? null;
+                      const vinfo = vid ? variantDetails[Number(vid)] : null;
+                      const displaySize = item.size || (vinfo && vinfo.size) || null;
+                      const displayColor = item.color || (vinfo && vinfo.color) || null;
+                      return (
+                        <div key={`${item.id}-${index}`} className="summary-item">
+                          <div className="item-image-wrapper">
+                            <img src={item.image || 'https://via.placeholder.com/80'} alt={item.name} onError={(e) => e.target.src = 'https://via.placeholder.com/80?text=No+Image'} />
+                            <span className="item-qty">{item.quantity}</span>
+                          </div>
+                          <div className="item-details">
+                            <h4>{item.name}</h4>
+                            {(displaySize || displayColor) ? (
+                              <p className="item-variants">{displaySize && `Size: ${displaySize}`}{displaySize && displayColor && ' | '}{displayColor && `Màu: ${displayColor}`}</p>
+                            ) : (<p className="item-variants muted">Không có chọn lựa biến thể</p>)}
+                            <p className="item-price">{(item.price || 0).toLocaleString()}₫</p>
+                          </div>
                         </div>
-                        <div className="item-details">
-                          <h4>{item.name}</h4>
-                          {(item.size || item.color) && (
-                            <p className="item-variants">
-                              {item.size && `Size: ${item.size}`}
-                              {item.size && item.color && ' | '}
-                              {item.color && `Màu: ${item.color}`}
-                            </p>
-                          )}
-                          <p className="item-price">{(item.price || 0).toLocaleString()}₫</p>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   <div className="promo-section">
@@ -850,7 +920,7 @@ export default function CheckoutPage() {
           </div>
         </div>
 
-        {/* ✅ QR Modal */}
+        {/* QR Modal */}
         {showQRCode && qrData && (
           <div className="qr-modal-overlay" onClick={paymentMethod === 'momo' && paymentProgress ? null : handleCancelQR}>
             <div className="qr-modal" onClick={(e) => e.stopPropagation()}>
@@ -862,16 +932,13 @@ export default function CheckoutPage() {
 
               <div className="qr-content">
                 <div className="qr-code-wrapper">
-                  <img src={qrData.qrCodeUrl} alt="QR Code" className="qr-code-image" />
+                  <img src={qrData.qrCodeUrl || qrData.payUrl || ''} alt="QR Code" className="qr-code-image" />
                 </div>
 
                 <div className="payment-info">
                   <h3>Thông tin thanh toán</h3>
-                  <div className="payment-detail-row"><span className="detail-label">Số tài khoản / SĐT:</span><span className="detail-value">{qrData.bankAccount || qrData.phoneNumber}</span></div>
-                  <div className="payment-detail-row"><span className="detail-label">Ngân hàng:</span><span className="detail-value">{qrData.bankName || qrData.bankCode}</span></div>
-                  <div className="payment-detail-row"><span className="detail-label">Chủ tài khoản:</span><span className="detail-value">{qrData.accountName}</span></div>
-                  <div className="payment-detail-row"><span className="detail-label">Số tiền:</span><span className="detail-value amount">{qrData.amount.toLocaleString()}₫</span></div>
-                  <div className="payment-detail-row"><span className="detail-label">Nội dung:</span><span className="detail-value">{qrData.note}</span></div>
+                  <div className="payment-detail-row"><span className="detail-label">Số tiền:</span><span className="detail-value amount">{(qrData.amount || 0).toLocaleString()}₫</span></div>
+                  <div className="payment-detail-row"><span className="detail-label">Nội dung:</span><span className="detail-value">{qrData.note || ''}</span></div>
                   {qrData.transactionId && (<div className="payment-detail-row"><span className="detail-label">Mã giao dịch:</span><span className="detail-value transaction-id">{qrData.transactionId}</span></div>)}
                 </div>
 
@@ -890,52 +957,34 @@ export default function CheckoutPage() {
           </div>
         )}
 
-        {/* ✅ Address Picker Modal */}
+        {/* Address Picker Modal */}
         {showAddressPicker && (
           <div className="qr-modal-overlay" onClick={() => setShowAddressPicker(false)}>
             <div className="qr-modal address-picker-modal" onClick={(e) => e.stopPropagation()}>
               <button className="qr-close-btn" onClick={() => setShowAddressPicker(false)}>✕</button>
-              <div className="qr-header">
-                <h2>Chọn địa chỉ nhận hàng</h2>
-                <p>Địa chỉ bạn chọn sẽ được điền vào thông tin giao hàng.</p>
-              </div>
-
+              <div className="qr-header"><h2>Chọn địa chỉ nhận hàng</h2><p>Địa chỉ bạn chọn sẽ được điền vào thông tin giao hàng.</p></div>
               <div className="address-picker-list">
                 {addresses && addresses.length > 0 ? (
                   addresses.map((addr) => (
-                    <div
-                      key={addr.id}
-                      className={`address-pick-item ${selectedAddress?.id === addr.id ? 'is-selected' : ''}`}
-                      onClick={() => setSelectedAddress(addr)}
-                    >
+                    <div key={addr.id} className={`address-pick-item ${selectedAddress?.id === addr.id ? 'is-selected' : ''}`} onClick={() => setSelectedAddress(addr)}>
                       <div className="pick-main">
                         <div className="pick-name">{addr.recipientName}</div>
                         <div className="pick-phone">{addr.phoneNumber || addr.phone}</div>
-                        <div className="pick-addr">
-                          {(addr.detailedAddress || addr.address)}
-                          {addr.country ? `, ${addr.country}` : ''}
-                        </div>
+                        <div className="pick-addr">{(addr.detailedAddress || addr.address)}{addr.country ? `, ${addr.country}` : ''}</div>
                       </div>
                       {addr.isDefault && <span className="pick-default">Mặc định</span>}
                     </div>
                   ))
-                ) : (
-                  <div className="empty-state" style={{ padding: '12px 0' }}>Bạn chưa có địa chỉ nào</div>
-                )}
+                ) : (<div className="empty-state" style={{ padding: '12px 0' }}>Bạn chưa có địa chỉ nào</div>)}
               </div>
-
               <div className="qr-actions">
                 <button className="btn-secondary" onClick={() => setShowAddressPicker(false)}>Hủy</button>
-                <button
-                  className="btn-primary"
-                  onClick={() => { if (selectedAddress) applyAddressToForm(selectedAddress); setShowAddressPicker(false); }}
-                >
-                  Dùng địa chỉ này
-                </button>
+                <button className="btn-primary" onClick={() => { if (selectedAddress) { setFormData(prev => ({ ...prev, address: selectedAddress.detailedAddress || selectedAddress.address || prev.address, fullName: selectedAddress.recipientName || prev.fullName, phone: selectedAddress.phoneNumber || prev.phone })); } setShowAddressPicker(false); }}>Dùng địa chỉ này</button>
               </div>
             </div>
           </div>
         )}
+
       </div>
     </Layout>
   );

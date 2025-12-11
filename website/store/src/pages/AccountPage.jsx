@@ -146,17 +146,19 @@ export default function AccountPage() {
     if (address) {
       setEditingAddress(address);
       setAddressForm({
-        recipientName: address.recipientName,
-        phone: address.phone,
-        address: address.address,
-        isDefault: address.isDefault
+        recipientName: address.recipientName ?? '',
+        phoneNumber: address.phoneNumber ?? address.phone ?? '',
+        detailedAddress: address.detailedAddress ?? address.address ?? '',
+        country: address.country ?? 'Vietnam',
+        isDefault: Boolean(address.isDefault)
       });
     } else {
       setEditingAddress(null);
       setAddressForm({
         recipientName: '',
-        phone: '',
-        address: '',
+        phoneNumber: '',
+        detailedAddress: '',
+        country: 'Vietnam',
         isDefault: false
       });
     }
@@ -168,8 +170,9 @@ export default function AccountPage() {
     setEditingAddress(null);
     setAddressForm({
       recipientName: '',
-      phone: '',
-      address: '',
+      phoneNumber: '',
+      detailedAddress: '',
+      country: 'Vietnam',
       isDefault: false
     });
   };
