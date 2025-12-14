@@ -43,3 +43,7 @@ logs/
 
 # Config files (sensitive)
 .config/
+
+# Documentation files (exclude unnecessary .md files)
+*.md
+!README.md
