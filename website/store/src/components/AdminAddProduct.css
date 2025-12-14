@@ -1,0 +1,632 @@
+/* AdminAddProduct.css — MERGED & CLEANED
+   - Gộp toàn bộ style liên quan tới trang Add Product (form + variants + images grid)
+   - Không còn block trùng lặp
+   - Dễ chỉnh: sửa biến CSS ở :root hoặc --image-card-height để phóng to ảnh
+*/
+
+:root {
+  --color-primary: #d70010;
+  --color-primary-dark: #b00010;
+  --bg-card: #ffffff;
+  --muted: #6B6B6B;
+  --input-border: #e6e6e6;
+  --shadow-1: 0 4px 20px rgba(0, 0, 0, 0.06);
+  --shadow-2: 0 6px 24px rgba(0, 0, 0, 0.08);
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+  --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
+  /* Quick tuning variable for image card height */
+  --image-card-height: 400px;
+  /* change this to make product previews bigger/smaller */
+}
+
+/* Thêm vào file addproduct.css (hoặc admin.css) */
+.add-category-row {
+  display: flex;
+  gap: 10px;
+  margin: 12px 0 16px 0;
+  align-items: center;
+}
+
+.add-category-row .form-text-input {
+  flex: 1;
+}
+
+/* nút thêm */
+.add-category-btn {
+  background: linear-gradient(90deg,#17a2ff,#1e90ff);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+}
+
+.add-category-btn:hover {
+  filter: brightness(0.95);
+}
+
+/* Tùy chỉnh item và nút xóa cho giống layout gốc */
+.category-selection-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #eee;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.03);
+}
+
+.category-item-icon {
+  width: 18px;
+  text-align: center;
+  color: #666;
+  font-size: 14px;
+}
+
+.category-item-name {
+  font-weight: 700;
+}
+
+/* nút xóa nằm bên phải */
+.delete-category-btn {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: #d33;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 8px;
+}
+.delete-category-btn:hover {
+  color: #a00;
+}
+
+/* Root container */
+.add-product-component {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  font-family: var(--font-sans);
+  color: #1a1a1a;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+/* Header */
+.page-header-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 28px 32px;
+  background: linear-gradient(135deg, #ffffff 0%, #fafafa 100%);
+  border-radius: 20px;
+  box-shadow: var(--shadow-1), 0 2px 8px rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  margin-bottom: 20px;
+}
+
+.header-left {
+  flex: 1;
+}
+
+.page-main-title {
+  font-size: 32px;
+  font-weight: 800;
+  margin: 0 0 6px 0;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #1a1a1a;
+}
+
+.page-subtitle {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.cancel-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  border: 2px solid #e6e6e6;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+/* Layout grid */
+.add-product-grid {
+  display: grid;
+  grid-template-columns: 1fr 420px;
+  gap: 28px;
+  align-items: start;
+}
+
+/* Left column */
+.product-info-section {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.section-card {
+  background: var(--bg-card);
+  padding: 28px;
+  border-radius: 16px;
+  box-shadow: var(--shadow-1);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.section-card-title {
+  font-size: 18px;
+  font-weight: 800;
+  margin: 0 0 12px 0;
+  text-transform: uppercase;
+}
+
+/* Form fields */
+.form-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.input-label {
+  font-size: 12px;
+  font-weight: 800;
+  color: #1a1a1a;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.input-label.required::after {
+  content: ' *';
+  color: var(--color-primary);
+}
+
+.form-text-input,
+.form-textarea-input,
+input[type="number"] {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 2px solid var(--input-border);
+  font-size: 14px;
+  background: #fff;
+  color: #1a1a1a;
+}
+
+.form-textarea-input {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.form-text-input:focus,
+.form-textarea-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 6px rgba(215, 0, 16, 0.06);
+}
+
+/* Row grid */
+.form-row-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin-top: 6px;
+}
+
+/* Image upload */
+.image-drop {
+  margin-top: 8px;
+  border: 3px dashed #E6E6E6;
+  border-radius: 12px;
+  min-height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background: #FAFAFA;
+  transition: all .12s ease;
+  overflow: hidden;
+}
+
+.image-drop:hover {
+  border-color: var(--color-primary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-2);
+}
+
+.image-drop .placeholder {
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.image-drop .placeholder .camera {
+  font-size: 28px;
+  opacity: .6;
+  margin-bottom: 8px;
+}
+
+.image-drop .preview {
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+  display: block;
+}
+
+/* Variants */
+.section-divider {
+  height: 1px;
+  background: #f3f3f3;
+  margin: 18px 0;
+}
+
+.add-variant-btn {
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-weight: 800;
+  box-shadow: 0 8px 18px rgba(215, 0, 16, 0.18);
+  text-transform: uppercase;
+  margin-top: 15px;
+}
+
+.variant-card {
+  background: #fff;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid #f0f0f0;
+  margin-top: 12px;
+}
+
+.variant-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+/* Ensure variant inputs always visible & readable */
+.variant-row input {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #e6e6e6;
+  font-size: 14px;
+  background: #fff;
+  color: #1a1a1a !important;
+}
+
+.variant-row input::placeholder {
+  color: #999;
+}
+
+.variant-remove-btn {
+  background: #fff;
+  border: 1px solid #f44336;
+  color: #f44336;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+/* Sidebar */
+.category-section-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.category-selection-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 10px;
+  background: #fafafa;
+  border-radius: 10px;
+}
+
+.category-selection-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #fff;
+  border: 2px solid #e6e6e6;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all .18s;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+.category-selection-item:hover {
+  transform: translateX(6px);
+  border-color: var(--color-primary);
+}
+
+.category-selection-item.selected {
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+  color: #fff;
+  border-color: var(--color-primary);
+  box-shadow: 0 6px 16px rgba(215, 0, 16, 0.2);
+}
+
+/* Submit card */
+.submit-actions-card {
+  padding: 20px;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: var(--shadow-1);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.submit-product-btn {
+  padding: 14px 18px;
+  border-radius: 12px;
+  border: none;
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+  color: #fff;
+  font-weight: 800;
+  cursor: pointer;
+  text-transform: uppercase;
+  box-shadow: 0 8px 20px rgba(215, 0, 16, 0.22);
+}
+
+.cancel-product-btn {
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 2px solid #e6e6e6;
+  background: #fafafa;
+  cursor: pointer;
+  font-weight: 700;
+  color: #000;
+}
+
+/* Scrollbar */
+.category-selection-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.category-selection-list::-webkit-scrollbar-track {
+  background: #f5f5f5;
+  border-radius: 8px;
+}
+
+.category-selection-list::-webkit-scrollbar-thumb {
+  background: #e6e6e6;
+  border-radius: 8px;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Images grid & card — SINGLE CLEAN BLOCK (no duplicates) */
+.images-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  /* 3 per row */
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.image-card {
+  position: relative;
+  background: #fff;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid #e6e6e6;
+  min-height: var(--image-card-height);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform .18s ease, box-shadow .18s ease;
+  padding: 0;
+  /* keep image edge-to-edge inside card */
+}
+
+.image-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.10);
+}
+
+.image-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* fills card; changes cropping */
+  display: block;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Action buttons in top-right (vertical) */
+.image-actions {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 20;
+}
+
+.remove-btn,
+.set-main-btn {
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 800;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  min-width: 120px;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.12);
+}
+
+.remove-btn {
+  background: linear-gradient(180deg, #f44336, #d32f2f);
+  color: #fff;
+}
+
+.set-main-btn {
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.set-main-btn.main {
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(215, 0, 16, 0.25);
+}
+
+.image-main-badge {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-weight: 900;
+  font-size: 12px;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
+  color: #fff;
+  box-shadow: 0 6px 14px rgba(215, 0, 16, 0.28);
+  z-index: 30;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .add-product-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .form-row-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .category-section-sidebar {
+    order: -1;
+  }
+
+  .submit-product-btn {
+    width: 100%;
+  }
+
+  .images-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .images-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  .image-card {
+    min-height: 240px;
+  }
+
+  .image-card img {
+    height: 100%;
+  }
+
+  .remove-btn,
+  .set-main-btn {
+    min-width: 100px;
+    padding: 8px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 520px) {
+  .images-grid {
+    grid-template-columns: repeat(1, 1fr);
+  }
+
+  .page-main-title {
+    font-size: 22px;
+  }
+
+  .image-card {
+    min-height: 400px;
+  }
+
+  .image-drop {
+    min-height: 120px;
+  }
+
+  .variant-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* small visual helpers */
+.section-divider--spaced {
+  margin: 18px 0;
+  height: 1px;
+  background: #f3f3f3;
+}
+
+.image-card .remove-btn {
+  position: absolute;
+  top: 8px;              /* cách mép trên card */
+  right: 8px;            /* cách mép phải card */
+  padding: 6px 8px;      /* nhỏ hơn */
+  font-size: 12px;       /* chữ nhỏ hơn */
+  min-width: 44px;       /* không quá rộng */
+  border-radius: 8px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.12);
+  transform: none;
+  z-index: 40;
+}
+
+/* Đặt ảnh chính: nằm trên, canh giữa */
+.image-card .set-main-btn {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 12px;
+  font-size: 13px;
+  min-width: 96px;
+  border-radius: 10px;
+  z-index: 40;
+}
+
+/* Nếu bạn vẫn có .image-actions wrapper, tắt style cũ gây ảnh hưởng */
+.image-card .image-actions {
+  position: static; /* hoặc set display:none nếu không dùng */
+  gap: 0;
+}
+
+/* responsive: giảm kích thước nút trên mobile */
+@media (max-width: 640px) {
+  .image-card .remove-btn { top: 6px; right: 6px; padding: 5px 6px; font-size: 11px; min-width: 40px; }
+  .image-card .set-main-btn { top: 6px; padding: 6px 10px; font-size: 12px; min-width: 80px; }
+}
+

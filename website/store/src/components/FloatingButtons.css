@@ -1,0 +1,301 @@
+.floating-buttons-container {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  z-index: 998;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 14px;
+  pointer-events: none;
+}
+
+.floating-buttons-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 14px;
+  pointer-events: auto;
+}
+
+.floating-buttons-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: slideInUp 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.floating-button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  background: white;
+  border: none;
+  border-radius: 50px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  min-width: 56px;
+  height: 56px;
+  justify-content: center;
+}
+
+.floating-button:hover {
+  transform: translateY(-4px) scale(1.05);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.floating-button:active {
+  transform: translateY(-2px) scale(1.02);
+}
+
+.floating-button svg {
+  flex-shrink: 0;
+}
+
+.button-label {
+  white-space: nowrap;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.phone-button {
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+}
+
+.phone-button:hover {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+}
+
+.messenger-button {
+  background: linear-gradient(135deg, #0084FF 0%, #0066CC 100%);
+}
+
+.messenger-button:hover {
+  background: linear-gradient(135deg, #0066CC 0%, #0052A3 100%);
+}
+
+.zalo-button {
+  background: linear-gradient(135deg, #0180C7 0%, #0068A5 100%);
+}
+
+.zalo-button:hover {
+  background: linear-gradient(135deg, #0068A5 0%, #005283 100%);
+}
+
+.floating-button-toggle {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #D70010 0%, #B80010 100%);
+  border: none;
+  box-shadow: 0 4px 16px rgba(215, 0, 16, 0.4);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  position: relative;
+}
+
+.floating-button-toggle:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 20px rgba(215, 0, 16, 0.5);
+}
+
+.floating-button-toggle:active {
+  transform: scale(0.95);
+}
+
+.floating-button-toggle svg {
+  transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.floating-buttons-group.is-expanded .floating-button-toggle {
+  background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%);
+}
+
+.floating-buttons-group.is-expanded .floating-button-toggle svg {
+  transform: rotate(180deg);
+}
+
+.scroll-to-top-button {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-dark);
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  animation: fadeInScale 0.3s ease;
+  pointer-events: auto;
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.scroll-to-top-button:hover {
+  background: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+  transform: translateY(-4px) scale(1.08);
+  box-shadow: 0 6px 16px rgba(215, 0, 16, 0.3);
+}
+
+.scroll-to-top-button:active {
+  transform: translateY(-2px) scale(1.04);
+}
+
+@media (max-width: 992px) {
+  .floating-buttons-container {
+    bottom: 24px;
+    right: 24px;
+    gap: 12px;
+  }
+
+  .floating-buttons-group {
+    gap: 12px;
+  }
+
+  .floating-buttons-list {
+    gap: 12px;
+  }
+
+  .floating-button {
+    padding: 11px 16px;
+    height: 52px;
+    min-width: 52px;
+    font-size: 13px;
+  }
+
+  .button-label {
+    font-size: 13px;
+  }
+
+  .floating-button-toggle {
+    width: 54px;
+    height: 54px;
+  }
+
+  .scroll-to-top-button {
+    width: 46px;
+    height: 46px;
+  }
+}
+
+@media (max-width: 768px) {
+  .floating-buttons-container {
+    bottom: 20px;
+    right: 20px;
+    gap: 12px;
+  }
+
+  .floating-button {
+    padding: 10px 14px;
+    height: 48px;
+    min-width: 48px;
+    font-size: 12px;
+    gap: 10px;
+  }
+
+  .button-label {
+    font-size: 12px;
+  }
+
+  .floating-button-toggle {
+    width: 52px;
+    height: 52px;
+  }
+
+  .floating-button-toggle svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .scroll-to-top-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .scroll-to-top-button svg {
+    width: 22px;
+    height: 22px;
+  }
+}
+
+@media (max-width: 480px) {
+  .floating-buttons-container {
+    bottom: 16px;
+    right: 16px;
+    gap: 10px;
+  }
+
+  .floating-buttons-group {
+    gap: 10px;
+  }
+
+  .floating-buttons-list {
+    gap: 10px;
+  }
+
+  .floating-button {
+    padding: 9px 13px;
+    height: 44px;
+    min-width: 44px;
+    font-size: 11px;
+    gap: 8px;
+  }
+
+  .button-label {
+    font-size: 11px;
+  }
+
+  .floating-button-toggle {
+    width: 48px;
+    height: 48px;
+  }
+
+  .floating-button-toggle svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .scroll-to-top-button {
+    width: 40px;
+    height: 40px;
+  }
+
+  .scroll-to-top-button svg {
+    width: 20px;
+    height: 20px;
+  }
+}

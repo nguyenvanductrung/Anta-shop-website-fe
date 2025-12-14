@@ -1,0 +1,153 @@
+/* Reset cho body & html */
+html, body, #root {
+  justify-content: center; /* Centers horizontally */
+  align-items: center;    /* Centers vertically */
+  height: 100%; 
+  width: 100%;
+}
+
+.auth-container {
+  display: flex;
+  justify-content: center;   /* canh ngang */
+  align-items: center;       /* canh dọc */
+  height: 100%;             /* full chiều cao màn hình */
+  background: linear-gradient(135deg, #74ebd5 0%, #9face6 100%);
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  width: 100%;
+}
+
+
+/* Form login/register */
+.auth-form {
+  background: #fff;
+  padding: 2.5rem;
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  width: 350px;
+  text-align: center;
+  animation: fadeIn 0.6s ease-in-out;
+}
+
+.auth-form h2 {
+  margin-bottom: 1.5rem;
+  font-size: 1.8rem;
+  font-weight: bold;
+  color: #333;
+}
+
+/* Input đẹp */
+.auth-form input {
+  width: 100%;
+  padding: 12px 15px;
+  margin-bottom: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  outline: none;
+  font-size: 1rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background-color: #fff;
+}
+
+.auth-form input:hover {
+  border-color: #bbb;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.auth-form input:focus {
+  border: 1px solid #6a11cb;
+  box-shadow: 0 0 0 4px rgba(106, 17, 203, 0.15), 0 4px 8px rgba(0, 0, 0, 0.1);
+  transform: translateY(-1px);
+}
+
+/* Nút đẹp */
+.auth-form button {
+  width: 100%;
+  padding: 12px;
+  background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.auth-form button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, #7d24d8 0%, #3d8aff 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.auth-form button:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(106, 17, 203, 0.35);
+}
+
+.auth-form button:hover::before {
+  opacity: 1;
+}
+
+.auth-form button:active {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(106, 17, 203, 0.25);
+}
+
+.auth-form button span {
+  position: relative;
+  z-index: 1;
+}
+
+/* Link */
+.auth-form p {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.auth-form a {
+  color: #2575fc;
+  font-weight: 600;
+  text-decoration: none;
+  position: relative;
+  transition: color 0.3s ease;
+}
+
+.auth-form a::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background: #2575fc;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.auth-form a:hover {
+  color: #6a11cb;
+}
+
+.auth-form a:hover::after {
+  width: 100%;
+}
+
+/* Hiệu ứng */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
