@@ -29,7 +29,7 @@
   margin: 0 auto;
   width: 100%;
   max-width: 900px;
-  min-height: 120px;
+  height: fit-content;
   border-radius: 0 0 12px 12px;
 }
 
